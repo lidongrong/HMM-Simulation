@@ -81,13 +81,7 @@ def Viterbi(A,B,state,obs):
     return HMM.hidden_state[x]
 
 # create initial guess of hidden state
-
-I=[]
-
-for i in range(0,data.shape[0]):
-    I.append(Viterbi(A,B,HMM.obs_state,data[i]))
-
-I=np.array(I)   
+ 
 
 # Sample from the conditional distribution of I
 # A,B: parameters
@@ -109,6 +103,13 @@ def Sample_I(A,B,state,obs):
     output=np.array(output)
     return output
 
+I=[]
+
+for i in range(0,data.shape[0]):
+    I.append(Sample_I(A,B,HMM.obs_state,data[i]))
+
+I=np.array(I)   
+
 # Gibbs sampling, pass initial guess of A, B, data & I as parameters
 # n: total number of iterations
 def Gibbs(A,B,data,I,n):  
@@ -119,6 +120,8 @@ def Gibbs(A,B,data,I,n):
         print(i)
         # first, sample B
         for j in range(0,B.shape[0]):
+            # for j th row of B, calculate the number of each 
+            # observed states respectively
             n1=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[0]))
             n2=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[1]))
             n3=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[2]))
@@ -147,22 +150,27 @@ def Gibbs(A,B,data,I,n):
             w=B[np.where(HMM.hidden_state==h)[0][0],:]
             data[miss_x[j],miss_y[j]]=np.random.choice(HMM.obs_state,1,p=w)[0]
         
-        # Next, we sample A using supervised estimation (density of A hard to compute)
+        # Next, we sample A using Dirichlet distribution
         A=np.zeros((A.shape[0],A.shape[1]))
         A[4,4]=1
+        # Count the total number that the chain stays at a state
         for j in range(0,4):
-            state_num=np.sum(I[:,0:9]==HMM.hidden_state[j])
-            #print(state_num)
-            freq=0
+            #state_num=np.sum(I[:,0:9]==HMM.hidden_state[j])
+            stay_freq=0
+            change_freq=0
             
             # Count how many times it happens that the chain stays 
             for k in range(0,9):
                 #print(freq)
                 a=(I[:,k]==I[:,k+1])
                 b=(I[:,k]==HMM.hidden_state[j])
-                freq=freq+np.sum(np.logical_and(a,b))
+                stay_freq=stay_freq+np.sum(np.logical_and(a,b))
+                c=(I[:,k]!=I[:,k+1])
+                change_freq=change_freq+np.sum(np.logical_and(c,b))
+                
+            #freq=freq+np.sum(I[:,9]==HMM.hidden_state[j])
             
-            A_posterior=np.random.dirichlet((1+freq,1+state_num-freq),1)[0]
+            A_posterior=np.random.dirichlet((1+stay_freq,1+change_freq),1)[0]
             #print('freq:',freq)
             #print('state:',state_num)
             #print(A_posterior)
@@ -172,13 +180,14 @@ def Gibbs(A,B,data,I,n):
         
         #print(A)
         
-        # Finally, we sample I using Viterbi algorithm
+        # Finally, we sample I
         for k in range(0,I.shape[0]):
-            I[k,:]=Sample_I(A,B,HMM.obs_state,data[k,:])
+            I[k,:]=Sample_I(A,B,HMM.obs_state,data[k])
         #print(I[3])
     return post_A, post_B
 
 print('Start Gibbs sampling...')
-post_A,post_B=Gibbs(A,B,data,I,40000) 
+post_A,post_B=Gibbs(A,B,data,I,40000)
+
 
 
