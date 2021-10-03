@@ -90,16 +90,67 @@ def Viterbi(A,B,state,obs):
 def Sample_I(A,B,state,obs):
     T=len(obs)
     output=[]
+    # always starts with A
     output.append(HMM.hidden_state[0])
     for i in range(1,T):
+        # (i-1)th hidden state
         hidden_address=np.where(HMM.hidden_state==output[i-1])[0][0]
+        # i th observed state
         observe_address=np.where(state==obs[i])[0][0]
         
         w=A[hidden_address,:]*B[:,observe_address].T/np.dot(A[hidden_address,:],
            B[:,observe_address])
         
         
+        
         output.append(np.random.choice(HMM.hidden_state,1,p=w)[0])
+    output=np.array(output)
+    return output
+
+# Based on the research note of 2021.10.2
+# An alternative function for sampling the hidden path
+# A,B: transition matrix and observation matrix
+# obs: observed sequence
+# state: array of observable states
+def sample_I(A,B,state,obs):
+    # Use backward and forward algorithm to compute the distribution of hidden 
+    # T is the length of observed sequence
+    T=len(obs)
+    alpha=np.zeros((T,len(state)))
+    beta=np.zeros((T,len(state)))
+    
+    
+    #print(T)
+    # intialize alpha and beta
+    # here beta_T(i)=1 and alpha_0(1)=1
+    alpha[0][0]=1
+    tmp=np.where(state==obs[T-1])[0][0]
+    beta[T-1,tmp]=1
+    
+    for i in range(1,T):
+        index=np.where(state==obs[i])[0][0]
+        alpha[i,:]=np.dot(alpha[i-1,:],A)*B[:,index]
+        
+        beta[T-1-i,:]=np.dot((A*B[:,index]),beta[T-i,:])
+    #print('beta',beta)
+    
+    output=[]
+    output.append(HMM.hidden_state[0])
+    # add the path one by one
+    for t in range(1,T):
+        # last hidden state
+        hidden_index=np.where(HMM.hidden_state==output[t-1])[0][0]
+        # current observed state
+        obs_index=np.where(state==obs[t])[0][0]
+        
+        dominator=alpha[t,hidden_index]*beta[t,hidden_index]/np.dot(alpha[t,:],beta[t,:]) 
+        nominator=alpha[t,hidden_index]*(A[hidden_index,:]*B[:,obs_index])*beta[t+1,:]
+        w=(nominator/dominator)/(alpha[t,hidden_index]*
+          np.dot(A[hidden_index,:]*B[:,obs_index],beta[t+1,:]))
+        print(w)
+        #w=alpha[t,:]*beta[t,:]/np.dot(alpha[t,:],beta[t,:])
+        output.append(np.random.choice(HMM.hidden_state,1,p=w)[0])
+        print('w:',w)
     output=np.array(output)
     return output
 
@@ -119,6 +170,7 @@ def Gibbs(A,B,data,I,n):
     for i in range(0,n):
         print(i)
         # first, sample B
+        B=np.zeros((B.shape[0],B.shape[1]))
         for j in range(0,B.shape[0]):
             # for j th row of B, calculate the number of each 
             # observed states respectively
@@ -138,6 +190,7 @@ def Gibbs(A,B,data,I,n):
             #n5=len(np.where(data[np.where(I==HMM.hidden_state[j])]
             #==HMM.obs_state[4])[0])
             # Draw from posterior distribution
+            
             B[j,:]=np.random.dirichlet((1+n1,1+n2,1+n3,1+n4,1+n5),1)[0]
         #print(B)
         post_B.append(B)
@@ -156,7 +209,9 @@ def Gibbs(A,B,data,I,n):
         # Count the total number that the chain stays at a state
         for j in range(0,4):
             #state_num=np.sum(I[:,0:9]==HMM.hidden_state[j])
+            # how many times the state stays at state j
             stay_freq=0
+            # how many time the state move away
             change_freq=0
             
             # Count how many times it happens that the chain stays 
@@ -180,14 +235,12 @@ def Gibbs(A,B,data,I,n):
         
         #print(A)
         
-        # Finally, we sample I
+        # Finally, we sample I (unobserved states)
         for k in range(0,I.shape[0]):
             I[k,:]=Sample_I(A,B,HMM.obs_state,data[k])
+            #I[k,:]=Viterbi(A,B,HMM.obs_state,data[k])
         #print(I[3])
     return post_A, post_B
 
 print('Start Gibbs sampling...')
-post_A,post_B=Gibbs(A,B,data,I,40000)
-
-
-
+post_A,post_B=Gibbs(A,B,data,I,30000)
