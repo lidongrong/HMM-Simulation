@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Aug 13 16:07:13 2021
-
 @author: a
 """
 
@@ -10,7 +9,8 @@ import scipy.stats as stats
 import math
 import HMM
 import Sampling
-
+from multiprocessing import Pool
+import time
 
 print('Data preprocessing...')
 
@@ -83,29 +83,6 @@ def Viterbi(A,B,state,obs):
 # create initial guess of hidden state
  
 
-# Sample from the conditional distribution of I
-# A,B: parameters
-# obs: observed sequence
-# state: array of observable states
-def Sample_I(A,B,state,obs):
-    T=len(obs)
-    output=[]
-    # always starts with A
-    output.append(HMM.hidden_state[0])
-    for i in range(1,T):
-        # (i-1)th hidden state
-        hidden_address=np.where(HMM.hidden_state==output[i-1])[0][0]
-        # i th observed state
-        observe_address=np.where(state==obs[i])[0][0]
-        
-        w=A[hidden_address,:]*B[:,observe_address].T/np.dot(A[hidden_address,:],
-           B[:,observe_address])
-        
-        
-        
-        output.append(np.random.choice(HMM.hidden_state,1,p=w)[0])
-    output=np.array(output)
-    return output
 
 # Based on the research note of 2021.10.5
 # An alternative function for sampling the hidden path
@@ -145,72 +122,30 @@ def f_b_sampling(A,B,state,obs):
     output.reverse()
     output=np.array(output)
     return output
-        
-        
-        
-        
-        
 
-# Based on the research note of 2021.10.2
-# An alternative function for sampling the hidden path
-# A,B: transition matrix and observation matrix
-# obs: observed sequence
-# state: array of observable states
-def sample_I(A,B,state,obs):
-    # Use backward and forward algorithm to compute the distribution of hidden 
-    # T is the length of observed sequence
-    T=len(obs)
-    alpha=np.zeros((T,len(state)))
-    beta=np.zeros((T,len(state)))
-    
-    
-    #print(T)
-    # intialize alpha and beta
-    # here beta_T(i)=1 and alpha_0(1)=1
-    alpha[0][0]=1
-    tmp=np.where(state==obs[T-1])[0][0]
-    beta[T-1,tmp]=1
-    
-    for i in range(1,T):
-        index=np.where(state==obs[i])[0][0]
-        alpha[i,:]=np.dot(alpha[i-1,:],A)*B[:,index]
+
+# Sample the whole I out using f_b_sampling        
+def sampling_hidden(data,I,A,B):
+  for i in range(0,data.shape[0]):
+    I[i,:]=f_b_sampling(A,B,HMM.obs_state,data[i])
+  return I
         
-        beta[T-1-i,:]=np.dot((A*B[:,index]),beta[T-i,:])
-    #print('beta',beta)
-    
-    output=[]
-    output.append(HMM.hidden_state[0])
-    # add the path one by one
-    for t in range(1,T):
-        # last hidden state
-        hidden_index=np.where(HMM.hidden_state==output[t-1])[0][0]
-        # current observed state
-        obs_index=np.where(state==obs[t])[0][0]
-        
-        dominator=alpha[t,hidden_index]*beta[t,hidden_index]/np.dot(alpha[t,:],beta[t,:]) 
-        nominator=alpha[t,hidden_index]*(A[hidden_index,:]*B[:,obs_index])*beta[t+1,:]
-        w=(nominator/dominator)/(alpha[t,hidden_index]*
-          np.dot(A[hidden_index,:]*B[:,obs_index],beta[t+1,:]))
-        print(w)
-        #w=alpha[t,:]*beta[t,:]/np.dot(alpha[t,:],beta[t,:])
-        output.append(np.random.choice(HMM.hidden_state,1,p=w)[0])
-        print('w:',w)
-    output=np.array(output)
-    return output
 
 I=[]
 
 for i in range(0,data.shape[0]):
-    I.append(Sample_I(A,B,HMM.obs_state,data[i]))
-    #I.append(Viterbi(A,B,HMM.obs_state,data[i]))
+    I.append(f_b_sampling(A,B,HMM.obs_state,data[i]))
 
 I=np.array(I)   
 
 # Gibbs sampling, pass initial guess of A, B, data & I as parameters
 # n: total number of iterations
-def Gibbs(A,B,data,I,n):  
+def Gibbs(A,B,data,I,p,n):  
     post_A=[]
     post_B=[]
+    
+    
+    
     #post_I=[]
     for i in range(0,n):
         print(i)
@@ -237,8 +172,10 @@ def Gibbs(A,B,data,I,n):
             # Draw from posterior distribution
             
             B[j,:]=np.random.dirichlet((1+n1,1+n2,1+n3,1+n4,1+n5),1)[0]
-        #print(B)
+        
+            
         post_B.append(B)
+        
         
         
         
@@ -262,7 +199,7 @@ def Gibbs(A,B,data,I,n):
                 c=(I[:,k]!=I[:,k+1])
                 change_freq=change_freq+np.sum(np.logical_and(c,b))
                 
-            #freq=freq+np.sum(I[:,9]==HMM.hidden_state[j])
+            
             
             A_posterior=np.random.dirichlet((1+stay_freq,1+change_freq))
             #print('freq:',freq)
@@ -270,11 +207,11 @@ def Gibbs(A,B,data,I,n):
             #print(A_posterior)
             A[j,j]=A_posterior[0]
             A[j,j+1]=A_posterior[1]
+            
         post_A.append(A)
         
-        #print(A)
         
-        # Then sample Omis
+        # Then sample Ymis
         for j in range(0,len(miss_x)):
             
             h=I[miss_x[j],miss_y[j]]
@@ -282,14 +219,44 @@ def Gibbs(A,B,data,I,n):
             data[miss_x[j],miss_y[j]]=np.random.choice(HMM.obs_state,1,p=w)[0]
         
         # Finally, we sample I (unobserved states)
+            
+        #p=Pool(4)
+        #s=time.time()
+        # CPU acceleration
+        I=p.starmap(sampling_hidden,[(data[0:450,:],I[0:450,:],A,B),(data[450:900,:],
+                                                                     I[450:900,:],A,B),(data[900:1350,:],
+                                                                                         I[900:1350,:],A,B),
+                                                                                         (data[1350:1800,:],
+                                                                                          I[1350:1800,:],A,B),
+                                                                                         (data[1800:2250,:],
+                                                                                          I[1800:2250,:],A,B),
+                                                                                         (data[2250:2700,:],
+                                                                                          I[2250:2700,:],A,B),
+                                                                                         (data[2700:3150,:],
+                                                                                          I[2700:3150,:],A,B),
+                                                                                         (data[3150:3600,:],
+                                                                                          I[3150:3600,:],A,B)])
+        I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
+        #e=time.time()
+        #print(e-s)
+        
+        
+        '''
         for k in range(0,I.shape[0]):
             #I[k,:]=Sample_I(A,B,HMM.obs_state,data[k])
             #I[k,:]=Viterbi(A,B,HMM.obs_state,data[k])
             I[k,:]=f_b_sampling(A,B,HMM.obs_state,data[k])
-        #print(I[3])
+        '''
+        
     return post_A, post_B
 
-print('Start Gibbs sampling...')
-post_A,post_B=Gibbs(A,B,data,I,25000)
+'''
+if __name__=='__main__':
+    
+    print('Start Gibbs sampling...')
+    # Parallel computing by CPU acceleration
+    p=Pool(8)
+    post_A,post_B=Gibbs(A,B,data,I,p,10000)
+    '''
 
 
