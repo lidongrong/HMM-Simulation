@@ -5,6 +5,9 @@ Created on Thu Oct  7 20:00:27 2021
 @author: s1155151972
 """
 
+# This program compares the efficiency of the Gibbs sampler at different missing levels
+
+
 
 import numpy as np
 import scipy.stats as stats
