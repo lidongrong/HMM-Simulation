@@ -123,6 +123,33 @@ def f_b_sampling(A,B,state,obs):
     output=np.array(output)
     return output
 
+# compute the likelihood of a hidden path sampled by f_b_sampling
+# A,B: transition matrix and observation matrix
+# obs: observed sequence
+# state:array of observable states
+# path: hidden path
+def path_likelihood(A,B,state,obs,path):
+    T=len(obs)
+    alpha=np.zeros((T,len(state)))
+    alpha[0][0]=1
+    
+    for i in range(1,T):
+        index=np.where(state==obs[i])[0][0]
+        alpha[i,:]=np.dot(alpha[i-1,:],A)*B[:,index]
+    
+    # initialize probability
+    prob=1
+    
+    w=alpha[T-1,:]/sum(alpha[T-1,:])
+    prob=prob*w[np.where(HMM.hidden_state==path[0])[0][0]]
+    
+    for t in range(1,T):
+        hidden_index=np.where(HMM.hidden_state==path[T-t])[0][0]
+        w=A[:,hidden_index]*alpha[T-1-t,:]/np.dot(A[:,hidden_index],alpha[T-1-t,:])
+        prob=prob*w[np.where(HMM.hidden_state==path[T-1-t])]
+    return prob
+    
+
 
 # Sample the whole I out using f_b_sampling        
 def sampling_hidden(data,I,A,B):
@@ -140,7 +167,7 @@ I=np.array(I)
 
 # Gibbs sampling, pass initial guess of A, B, data & I as parameters
 # n: total number of iterations
-def Gibbs(A,B,data,I,p,n):  
+def Gibbs(A,B,data,I,n):  
     post_A=[]
     post_B=[]
     
@@ -222,7 +249,6 @@ def Gibbs(A,B,data,I,p,n):
             
         #p=Pool(4)
         #s=time.time()
-        # CPU acceleration
         I=p.starmap(sampling_hidden,[(data[0:450,:],I[0:450,:],A,B),(data[450:900,:],
                                                                      I[450:900,:],A,B),(data[900:1350,:],
                                                                                          I[900:1350,:],A,B),
@@ -254,9 +280,7 @@ def Gibbs(A,B,data,I,p,n):
 if __name__=='__main__':
     
     print('Start Gibbs sampling...')
-    # Parallel computing by CPU acceleration
     p=Pool(8)
-    post_A,post_B=Gibbs(A,B,data,I,p,10000)
-    '''
-
-
+    post_A,post_B=Gibbs(A,B,data,I,2500)
+    
+'''
