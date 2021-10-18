@@ -141,13 +141,14 @@ def path_likelihood(A,B,state,obs,path):
     prob=1
     
     w=alpha[T-1,:]/sum(alpha[T-1,:])
-    prob=prob*w[np.where(HMM.hidden_state==path[0])[0][0]]
+    prob=prob*w[np.where(HMM.hidden_state==path[T-1])[0][0]]
     
+    # compute likelihood backwardly from T-1 to 1
     for t in range(1,T):
         hidden_index=np.where(HMM.hidden_state==path[T-t])[0][0]
         w=A[:,hidden_index]*alpha[T-1-t,:]/np.dot(A[:,hidden_index],alpha[T-1-t,:])
         prob=prob*w[np.where(HMM.hidden_state==path[T-1-t])]
-    return prob
+    return prob[0]
     
 
 
