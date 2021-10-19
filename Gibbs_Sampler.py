@@ -149,7 +149,14 @@ def path_likelihood(A,B,state,obs,path):
         w=A[:,hidden_index]*alpha[T-1-t,:]/np.dot(A[:,hidden_index],alpha[T-1-t,:])
         prob=prob*w[np.where(HMM.hidden_state==path[T-1-t])]
     return prob[0]
-    
+
+
+# Update all likelihood in one function
+# designed in a function fashion such that the code can be parallelized
+def update_likelihood(A,B,state,likelihood,data,I):
+    for i in range(data.shape[0]):
+        likelihood[i]=max(path_likelihood(A,B,state,data[i],I[i]),likelihood[i])
+    return likelihood
 
 
 # Sample the whole I out using f_b_sampling        
@@ -158,20 +165,27 @@ def sampling_hidden(data,I,A,B):
     I[i,:]=f_b_sampling(A,B,HMM.obs_state,data[i])
   return I
         
-
+#initialize I and likelihood
 I=[]
+likelihood=[]
 
 for i in range(0,data.shape[0]):
     I.append(f_b_sampling(A,B,HMM.obs_state,data[i]))
+    likelihood.append(path_likelihood(A,B,HMM.obs_state,data[i],I[i]))
 
+# initialized value
 I=np.array(I)   
+likelihood=np.array(likelihood)
+
+# store I with largest likelihood
+I_buffer=I.copy()
 
 # Gibbs sampling, pass initial guess of A, B, data & I as parameters
 # n: total number of iterations
-def Gibbs(A,B,data,I,n):  
+def Gibbs(A,B,likelihood,data,I,n):  
     post_A=[]
     post_B=[]
-    
+    I_buffer=I.copy()
     
     
     #post_I=[]
@@ -230,9 +244,6 @@ def Gibbs(A,B,data,I,n):
             
             
             A_posterior=np.random.dirichlet((1+stay_freq,1+change_freq))
-            #print('freq:',freq)
-            #print('state:',state_num)
-            #print(A_posterior)
             A[j,j]=A_posterior[0]
             A[j,j+1]=A_posterior[1]
             
@@ -248,8 +259,10 @@ def Gibbs(A,B,data,I,n):
         
         # Finally, we sample I (unobserved states)
             
-        #p=Pool(4)
+        
         #s=time.time()
+        
+        old_likelihood=likelihood.copy()
         I=p.starmap(sampling_hidden,[(data[0:450,:],I[0:450,:],A,B),(data[450:900,:],
                                                                      I[450:900,:],A,B),(data[900:1350,:],
                                                                                          I[900:1350,:],A,B),
@@ -264,9 +277,30 @@ def Gibbs(A,B,data,I,n):
                                                                                          (data[3150:3600,:],
                                                                                           I[3150:3600,:],A,B)])
         I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
+        
+        likelihood=p.starmap(update_likelihood,[(A,B,HMM.obs_state,likelihood[0:450],data[0:450,:],I[0:450,:]),
+                                                (A,B,HMM.obs_state,likelihood[450:900],data[450:900,:],
+                                                                     I[450:900,:]),
+                                                (A,B,HMM.obs_state,likelihood[900:1350],data[900:1350,:],I[900:1350,:]),
+                                                (A,B,HMM.obs_state,likelihood[1350:1800],data[1350:1800,:],I[1350:1800,:]),
+                                                (A,B,HMM.obs_state,likelihood[1800:2250],data[1800:2250,:],I[1800:2250,:]),
+                                                (A,B,HMM.obs_state,likelihood[2250:2700],data[2250:2700,:],I[2250:2700,:]),
+                                                (A,B,HMM.obs_state,likelihood[2700:3150],data[2700:3150,:],I[2700:3150,:]),
+                                                (A,B,HMM.obs_state,likelihood[3150:3600],data[3150:3600,:],I[3150:3600,:])])
+        likelihood=np.hstack((likelihood[0],likelihood[1],likelihood[2],likelihood[3],likelihood[4],
+                              likelihood[5],likelihood[6],likelihood[7]))
         #e=time.time()
         #print(e-s)
         
+        
+        '''
+        for i in range(I.shape[0]):
+            if likelihood[i]>old_likelihood[i]:
+                I_buffer[i]=I[i]
+                '''
+        I_buffer[np.where(likelihood>old_likelihood)]=I[np.where(likelihood>old_likelihood)]
+                
+                
         
         '''
         for k in range(0,I.shape[0]):
@@ -275,13 +309,12 @@ def Gibbs(A,B,data,I,n):
             I[k,:]=f_b_sampling(A,B,HMM.obs_state,data[k])
         '''
         
-    return post_A, post_B
+    return post_A, post_B,I_buffer
 
-'''
+
 if __name__=='__main__':
     
     print('Start Gibbs sampling...')
     p=Pool(8)
-    post_A,post_B=Gibbs(A,B,data,I,2500)
+    post_A,post_B,I_buffer=Gibbs(A,B,likelihood,data,I,3000)
     
-'''
