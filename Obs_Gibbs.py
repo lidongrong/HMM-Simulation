@@ -11,17 +11,21 @@ import HMM
 import Sampling
 import time
 from multiprocessing import pool
+import scipy.stats as stats
 
 
-print('Data Preprocessing and Initializing Parameters...')
-data=Sampling.data
 
-# Initialize transition matrix A
-A=np.array([[0.5,0.5,0,0,0],[0,0.5,0.5,0,0],[0,0,0.5,0.5,0],[0,0,0,0.5,0.5],[0,0,0,0,1]])
+# initialize data, transition matrix and obs_matrix
+def data_initializer():
+    print('Data Preprocessing and Initializing Parameters...')
+    data=Sampling.data
 
-# Initialize observation matrix B
-B=np.random.dirichlet((1,1,1,1,1),5)
+    # Initialize transition matrix A
+    A=np.array([[0.5,0.5,0,0,0],[0,0.5,0.5,0,0],[0,0,0.5,0.5,0],[0,0,0,0.5,0.5],[0,0,0,0,1]])
 
+    # Initialize observation matrix B
+    B=np.random.dirichlet((1,1,1,1,1),5)
+    return A,B,data
 
 # Sample the latent state using forward backward sampling
 # Based on research note in 2021.10.21
@@ -78,22 +82,36 @@ def f_b_sampling(A,B,obs):
     seq[indexer]=output
     return seq
 
+
 # sample the whole latent sequence out
+# A,B:transition matrix and obs matrix
+# data: partially observed data
+# I: latent sequence from the last iteration
 def sample_latent_seq(data,I,A,B):
     for i in range(0,data.shape[0]):
         I[i,:]=f_b_sampling(A,B,data[i])
     return I
 
 
-# initialize latent sequence I
-I=[]
-for i in range(0,data.shape[0]):
-    I[i]=np.repeat('None',data.shape[1])
 
-I=sample_latent_Seq(data,I,A,B)
+# initialize the latent sequence as initial guess
+def latent_seq_initializer(data,A,B):
+    # initialize latent sequence I
+    I=[]
+    for i in range(0,data.shape[0]):
+        I.append(np.repeat('None',data.shape[1]))
+    I=np.array(I)
 
-# Used later in computing likelihood
-I_buffer=I.copy()
+    I=sample_latent_seq(data,I,A,B)
+    return I
+
+# Make an initial guess of the parameters and latent variables
+def initialize():
+    A,B,data=data_initializer()
+    I=latent_seq_initializer(data,A,B)
+    return A,B,data,I
+
+
 
 # Sample B out in Gibbs Sampling
 # B: B sampled in last iteration
@@ -109,18 +127,63 @@ def sample_B(data,I,B):
         B[j,:]=np.random.dirichlet((1+n1,1+n2,1+n3,1+n4,1+n5),1)[0]
     return B
 
-# Sample A out using rejection sampling
-# The code is based on research note on 2021.10.21
-# A: transition matrix from last iteration
+# Sample A out using Metropolis within Gibbs
+# Algorithm based on Resarch note in 2021.10.28
+# A: transition matrix from the last iteration
 def sample_A(data,I,A):
     # Because we assume the last state is an absorbing state
     for j in range(0,A.shape[0]-1):
-        # How many times the state remains or leave j from the latent space w.r.t. observed data
-        stay_freq=0
-        change_freq=0
-        pass
-    pass
-
+        # randomly choose a batch for estimation
+        batch_size=5
+        batch=I[np.random.choice(I.shape[0],batch_size),:]
+        indexer=np.where(batch!='None')
+        
+        # acquire the parameter from the last iteration
+        a=A[j,j]
+        # sample from proposal distribution
+        new_a=np.random.beta(2,(2/a-2),1)[0]
+        new_A=A.copy()
+        new_A[j,j]=new_a
+        # compute the likelihood up to a normalizing constant
+        p=1
+        p_new=1
+        for k in range(0,batch_size):
+            indexer=np.where(batch[k]!='None')[0]
+            # We always assume start from a specific state
+            if j==0 and indexer[0]!=0:
+                pos=np.where(HMM.hidden_state==batch[k][indexer[0]])[0][0]
+                p=p*np.linalg.matrix_power(A,indexer[0])[j][pos]
+                p_new=p_new*np.linalg.matrix_power(new_A,indexer[0])[j][pos]
+                
+            
+            
+            for i in range(0,len(indexer)-1):
+                if batch[k][indexer[i]]==HMM.hidden_state[j] and batch[k][indexer[i]]==batch[k][indexer[i+1]]:
+                    p=p*np.linalg.matrix_power(A,indexer[i+1]-indexer[i])[j][j]
+                    p_new=p_new*np.linalg.matrix_power(new_A,indexer[i+1]-indexer[i])[j][j]
+                if batch[k][indexer[i]]==HMM.hidden_state[j] and batch[k][indexer[i]]!=batch[k][indexer[i+1]]:
+                    pos=np.where(HMM.hidden_state==batch[k][indexer[i+1]])[0][0]
+                    p=p*np.linalg.matrix_power(A,indexer[i+1]-indexer[i])[j][pos]
+                    p_new=p_new*np.linalg.matrix_power(new_A,indexer[i+1]-indexer[i])[j][pos]
+                    break
+        
+        # determine the metropolis acceptance rate
+        if p==0:
+            u=1
+        else:
+            r=(p_new*stats.beta.pdf(new_a,(2/a-2),1))/(p*stats.beta.pdf(a,(2/new_a-2),1))
+            u=min(1,r)
+        
+        unif=np.random.uniform(0,1,1)[0]
+        if unif<u:
+            A[j,j]=new_a
+            A[j,j+1]=1-A[j,j]
+    return A
+            
+                    
+if __name__=='__main__':
+    A,B,data,I=initialize()
+    print('Program finished')
         
         
 
