@@ -147,14 +147,15 @@ def sample_B(data,I,B):
 # Sample A out using Metropolis within Gibbs on a minibatch of the data
 # Algorithm based on Resarch note in 2021.10.29
 # A: transition matrix from the last iteration
-def minibatch_sample_A(batch_size,data,I,A):
+# start_batch_index: a 4xbatch_size matrix, containing the batch index for each parameter
+def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
     
-    initial_batch_index=np.random.choice(I.shape[0],batch_size,replace=False)
-    batch_index=initial_batch_index
+    initial_batch_index=start_batch_index
     
     # Because we assume the last state is an absorbing state
     for j in range(0,A.shape[0]-1):
-        print(batch_index)
+        
+        batch_index=initial_batch_index[j]
         
         # initialize the batch, which is from the last iteration
         batch=I[batch_index,:]
@@ -235,13 +236,15 @@ def minibatch_sample_A(batch_size,data,I,A):
         if unif<u:
             A[j,j]=new_a
             A[j,j+1]=1-new_a
-            batch_index=proposed_batch_index
+            initial_batch_index[j]=proposed_batch_index
     
     A=np.array(A)
     
     final_A=A
     
-    return final_A
+    final_batch_index=initial_batch_index
+    
+    return final_A,final_batch_index
 
 # Gibbs sampling using Metropolis within Gibbs algorithm
 # input I,A,B: initial guesses of the parameter
@@ -268,9 +271,10 @@ def Gibbs(data,I,A,B,n,batch_size):
 def parallel_Gibbs(data,I,A,B,n,batch_size):
     post_A=[]
     post_B=[]
+    batch_index=np.array([np.random.choice(I.shape[0],batch_size,replace=False) for i in range(0,4)])
     for i in range(0,n):
         print(i)
-        A=minibatch_sample_A(batch_size,data,I,A)
+        A,batch_index=minibatch_sample_A(batch_index,batch_size,data,I,A)
         B=sample_B(data,I,B)
         
         I=p.starmap(sample_latent_seq,[(data[0:450,:],I[0:450,:],A,B),(data[450:900,:],
@@ -305,7 +309,7 @@ if __name__=='__main__':
     
     
     p=Pool(8)
-    post_A,post_B=parallel_Gibbs(data,I,A,B,60,batch_size)
+    post_A,post_B=parallel_Gibbs(data,I,A,B,60000,batch_size)
     
     
     print('Program finished')
