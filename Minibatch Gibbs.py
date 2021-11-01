@@ -154,8 +154,9 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
     
     # Because we assume the last state is an absorbing state
     for j in range(0,A.shape[0]-1):
+        print(A)
         
-        batch_index=initial_batch_index[j]
+        batch_index=initial_batch_index[j,:]
         
         # initialize the batch, which is from the last iteration
         batch=I[batch_index,:]
@@ -166,7 +167,7 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
         
         # Tempering constant suggested by the algorithm in the JASA paper
         # A number smaller but close to sqrt(m), where m is the batch size
-        cn=math.sqrt(len(batch_index))-0.1
+        cn=math.sqrt(len(batch_index))-0.05
         
         
         # acquire the parameter from the last iteration
@@ -175,8 +176,8 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
         # sample from proposal distribution
         # prevent b from <0, so if b too small, truncate by .0000001
         #new_a=np.random.beta(2,max(2/a-2,0.001),1)[0]
-        #new_a=np.random.beta(2,max(2/a-2,0.001),1)[0]
-        new_a=np.random.uniform(0,1,1)[0]
+        new_a=np.random.beta(2,max(1/a,0.01),1)[0]
+        #new_a=np.random.uniform(0,1,1)[0]
         
         new_A=A.copy()
         new_A[j,j]=new_a
@@ -226,17 +227,20 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
         else:
             
             #r is the acceptance rate
-            #r=(new_p*stats.beta.pdf(a,2,max((2/new_a-2),0.001)))/(p*stats.beta.pdf(new_a,2,max((2/a-2),0.001)))
-            r=(new_p/p)**(cn/batch_size)
-            
-            #r=((new_p**(cn/batch_size))*stats.beta.pdf(a,2,max(2/new_a-2,0.001)))/((p**(cn/batch_size))*stats.beta.pdf(new_a,2,max(2/a-2,0.001)))
+            #r=(new_p/p)**(cn/batch_size)
+            r=((new_p**(cn/batch_size))*stats.beta.pdf(a,2,max(1/new_a,0.01)))/((p**(cn/batch_size))*stats.beta.pdf(new_a,2,max(1/a,0.01)))
             u=min(1,r)
         
+        print(u)
         unif=np.random.uniform(0,1,1)[0]
         if unif<u:
             A[j,j]=new_a
             A[j,j+1]=1-new_a
             initial_batch_index[j]=proposed_batch_index
+        else:
+            A[j,j]=a
+            A[j,j+1]=1-a
+            initial_batch_index[j]=batch_index
     
     A=np.array(A)
     
@@ -271,7 +275,7 @@ def Gibbs(data,I,A,B,n,batch_size):
 def parallel_Gibbs(data,I,A,B,n,batch_size):
     post_A=[]
     post_B=[]
-    batch_index=np.array([np.random.choice(I.shape[0],batch_size,replace=False) for i in range(0,4)])
+    batch_index=np.array([np.random.choice(I.shape[0],batch_size,replace=False) for i in range(0,A.shape[0])])
     for i in range(0,n):
         print(i)
         A,batch_index=minibatch_sample_A(batch_index,batch_size,data,I,A)
@@ -305,11 +309,11 @@ def parallel_Gibbs(data,I,A,B,n,batch_size):
                     
 if __name__=='__main__':
     A,B,data,I=initialize()
-    batch_size=15
+    batch_size=20
     
     
     p=Pool(8)
-    post_A,post_B=parallel_Gibbs(data,I,A,B,60000,batch_size)
+    post_A,post_B=parallel_Gibbs(data,I,A,B,500,batch_size)
     
     
     print('Program finished')
@@ -317,6 +321,11 @@ if __name__=='__main__':
 
         
         
+
+
+
+    
+
 
 
 
