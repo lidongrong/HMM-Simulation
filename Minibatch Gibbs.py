@@ -176,7 +176,8 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
         # sample from proposal distribution
         # prevent b from <0, so if b too small, truncate by .0000001
         #new_a=np.random.beta(2,max(2/a-2,0.001),1)[0]
-        new_a=np.random.beta(2,max(1/a,0.01),1)[0]
+        #new_a=np.random.beta(2,max(1/a,0.01),1)[0]
+        new_a=np.random.beta(2,1/a,1)[0]
         #new_a=np.random.uniform(0,1,1)[0]
         
         new_A=A.copy()
@@ -228,10 +229,11 @@ def minibatch_sample_A(start_batch_index,batch_size,data,I,A):
             
             #r is the acceptance rate
             #r=(new_p/p)**(cn/batch_size)
-            r=((new_p**(cn/batch_size))*stats.beta.pdf(a,2,max(1/new_a,0.01)))/((p**(cn/batch_size))*stats.beta.pdf(new_a,2,max(1/a,0.01)))
+            #r=((new_p**(cn/batch_size))*stats.beta.pdf(a,2,max(1/new_a,0.01)))/((p**(cn/batch_size))*stats.beta.pdf(new_a,2,max(1/a,0.01)))
+            r=(new_p**(cn/batch_size))*stats.beta.pdf(a,2,1/new_a)/((p**(cn/batch_size))*stats.beta.pdf(new_a,2,1/a))
             u=min(1,r)
         
-        print(u)
+        
         unif=np.random.uniform(0,1,1)[0]
         if unif<u:
             A[j,j]=new_a
@@ -309,11 +311,11 @@ def parallel_Gibbs(data,I,A,B,n,batch_size):
                     
 if __name__=='__main__':
     A,B,data,I=initialize()
-    batch_size=20
+    batch_size=100
     
     
     p=Pool(8)
-    post_A,post_B=parallel_Gibbs(data,I,A,B,500,batch_size)
+    post_A,post_B=parallel_Gibbs(data,I,A,B,25000,batch_size)
     
     
     print('Program finished')
@@ -321,6 +323,11 @@ if __name__=='__main__':
 
         
         
+
+
+
+    
+
 
 
 
