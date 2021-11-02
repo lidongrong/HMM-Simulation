@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Nov  2 11:17:07 2021
+
+@author: a
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Oct 29 17:01:45 2021
+@author: s1155151972
+"""
+
+
+######
+# Perform MH within Gibbs Sampler but only integrate the observed missing value out
+######
+
+
+import numpy as np
+import HMM
+import Sampling
+import time
+from multiprocessing import Pool
+import scipy.stats as stats
+import math
+
+
+
+# initialize data, transition matrix and obs_matrix
+def data_initializer():
+    print('Data Preprocessing and Initializing Parameters...')
+    data=Sampling.data
+
+    # Initialize transition matrix A
+    A=np.array([[0.5,0.5,0,0,0],[0,0.5,0.5,0,0],[0,0,0.5,0.5,0],[0,0,0,0.5,0.5],[0,0,0,0,1]])
+
+    # Initialize observation matrix B
+    B=np.random.dirichlet((1,1,1,1,1),5)
+    return A,B,data
+
+# Sample the latent state using forward backward sampling
+# Based on research note in 2021.10.21
+# A,B: transition matrix and observation matrix
+# state: observed sequence with missing observation
+# obs: the observed sequence
+def f_b_sampling(A,B,obs):
+    
+    # Check if the whole sequence is missing
+    if np.all(obs=='None'):
+        return obs
+    
+    # acquire the index that correspond to observations that are not missing
+    indexer=np.where(obs!='None')[0]
+    
+    # length of the whole sequence 
+    T=len(obs)
+    state=HMM.obs_state
+    hidden_state=HMM.hidden_state
+    # start to compute alpha recursively
+    alpha=np.zeros((T,len(HMM.state)))
+    
+    '''
+    # In this case, t1=t0
+    if indexer[0]==0:
+        alpha[0][0]=1
+    else:
+        # in this case, we initialize z_{t1} conditioned on the case that t0=1
+        y=np.where(state==obs[indexer[0]])[0][0]
+        initial=np.zeros(len(state))
+        initial[0]=1
+        alpha[0,:]=np.dot(initial,np.linalg.matrix_power(A, indexer[0]))*B[:,y]
+        '''
+    
+    alpha[0][0]=1
+    
+    for i in range(1,T):
+        # corresponds to the case that y_i is observable
+        if i in indexer:
+            y=np.where(state==obs[i])[0][0]
+            alpha[i,:]=np.dot(alpha[i-1,:],A)*B[:,y]
+        else:
+            alpha[i,:]=np.dot(alpha[i-1,:],A)
+        
+        '''
+        y=np.where(state==obs[indexer[i]])[0][0]
+        alpha[i,:]=np.dot(alpha[i-1,:],np.linalg.matrix_power(A,indexer[i]-indexer[i-1]))*B[:,y]
+        '''
+        
+    # initialize the output
+    output=[]
+    
+    # First sample the last latent state
+    w=alpha[T-1,:]/sum(alpha[T-1,:])
+    output.append(np.random.choice(hidden_state,1,p=w)[0])
+    
+    # Then sample each latent state in sequence
+    for t in range(1,T):
+        # compute the index of hidden state z_{t+1}
+        hidden_index=np.where(HMM.hidden_state==output[t-1])[0][0]
+        w=A[:,hidden_index]*alpha[T-1-t,:]/np.dot(A[:,hidden_index],alpha[T-1-t,:])
+        output.append(np.random.choice(HMM.hidden_state,1,p=w)[0])
+    output.reverse()
+    output=np.array(output)
+    return output
+
+
+# sample the whole latent sequence out
+# A,B:transition matrix and obs matrix
+# data: partially observed data
+# I: latent sequence from the last iteration
+def sample_latent_seq(data,I,A,B):
+    for i in range(0,data.shape[0]):
+        I[i,:]=f_b_sampling(A,B,data[i])
+    return I
+
+
+
+# initialize the latent sequence as initial guess
+def latent_seq_initializer(data,A,B):
+    # initialize latent sequence I
+    I=[]
+    for i in range(0,data.shape[0]):
+        I.append(np.repeat('None',data.shape[1]))
+    I=np.array(I)
+
+    I=sample_latent_seq(data,I,A,B)
+    return I
+
+# Make an initial guess of the parameters and latent variables
+def initialize():
+    A,B,data=data_initializer()
+    I=latent_seq_initializer(data,A,B)
+    return A,B,data,I
+
+
+
+# Sample B out in Gibbs Sampling
+# B: B sampled in last iteration
+def sample_B(data,I,B):
+    for j in range(0,B.shape[0]):
+        # for j th row of B, calculate the number of each 
+        # observed states respectively
+        n1=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[0]))
+        n2=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[1]))
+        n3=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[2]))
+        n4=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[3]))
+        n5=np.sum(np.logical_and(I==HMM.hidden_state[j],data==HMM.obs_state[4]))
+        B[j,:]=np.random.dirichlet((1+n1,1+n2,1+n3,1+n4,1+n5),1)[0]
+    B=np.array(B)
+    new_B=B
+    #print(B)
+    return new_B
+
+
+# Sample A out based on the full latent sequence
+# Algorithm based on Resarch note in 2021.10.29
+# A: transition matrix from the last iteration
+def sample_A(data,I,A):
+    A=np.zeros((A.shape[0],A.shape[1]))
+    A[4,4]=1
+    # Count the total number that the chain stays at a state
+    for j in range(0,4):
+        #state_num=np.sum(I[:,0:9]==HMM.hidden_state[j])
+        # how many times the state stays at state j
+        stay_freq=0
+        # how many time the state move away
+        change_freq=0
+        
+        # Count how many times it happens that the chain stays 
+        for k in range(0,I.shape[1]-1):
+            #print(freq)
+            a=(I[:,k]==I[:,k+1])
+            b=(I[:,k]==HMM.hidden_state[j])
+            stay_freq=stay_freq+np.sum(np.logical_and(a,b))
+            c=(I[:,k]!=I[:,k+1])
+            change_freq=change_freq+np.sum(np.logical_and(c,b))
+                
+            
+            
+        A_posterior=np.random.dirichlet((1+stay_freq,1+change_freq))
+        A[j,j]=A_posterior[0]
+        A[j,j+1]=A_posterior[1]
+    return A
+
+
+
+
+
+
+
+# Gibbs sampling using Metropolis within Gibbs algorithm
+# input I,A,B: initial guesses of the parameter
+# n: number of samples to draw
+def Gibbs(data,I,A,B,n,batch_size):
+    post_A=[]
+    post_B=[]
+    for i in range(0,n):
+        print(i)
+        A=minibatch_sample_A(batch_size,data,I,A)
+        B=sample_B(data,I,B)
+        I=sample_latent_seq(data,I,A,B)
+        
+        post_A.append(A)
+        post_B.append(B)
+    post_A=np.array(post_A)
+    post_B=np.array(post_B)
+    return post_A,post_B
+
+# Gibbs Sampling accelerated by parallel computing
+# input I,A,B: initial guesses of the parameter
+# n: number of samples to draw
+# p: Pool
+def parallel_Gibbs(data,I,A,B,n):
+    post_A=[]
+    post_B=[]
+    for i in range(0,n):
+        print(i)
+        A=sample_A(data,I,A)
+        B=sample_B(data,I,B)
+        
+        I=p.starmap(sample_latent_seq,[(data[0:450,:],I[0:450,:],A,B),(data[450:900,:],
+                                                                     I[450:900,:],A,B),(data[900:1350,:],
+                                                                                         I[900:1350,:],A,B),
+                                                                                         (data[1350:1800,:],
+                                                                                          I[1350:1800,:],A,B),
+                                                                                         (data[1800:2250,:],
+                                                                                          I[1800:2250,:],A,B),
+                                                                                         (data[2250:2700,:],
+                                                                                          I[2250:2700,:],A,B),
+                                                                                         (data[2700:3150,:],
+                                                                                          I[2700:3150,:],A,B),
+                                                                                         (data[3150:3600,:],
+                                                                                          I[3150:3600,:],A,B)])
+                                                                                        
+        I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
+        #I=sample_latent_seq(data,I,A,B)
+        
+        
+        
+        post_A.append(A)
+        post_B.append(B)
+    post_A=np.array(post_A)
+    post_B=np.array(post_B)
+    return post_A,post_B
+        
+                    
+if __name__=='__main__':
+    A,B,data,I=initialize()
+    
+    
+    p=Pool(8)
+    post_A,post_B=parallel_Gibbs(data,I,A,B,20)
+    
+    
+    print('Program finished')
