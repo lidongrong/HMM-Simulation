@@ -38,7 +38,7 @@ def Obs_Generator(MC,hidden_sample):
         obs_sample.append(MC.sample_obs(hidden_sample[i,:]))
     return np.array(obs_sample)
 
-hidden_data=Hidden_Generator(HMM.MC,15,3600)
+hidden_data=Hidden_Generator(HMM.MC,20,3600)
 data=Obs_Generator(HMM.MC,hidden_data)
 
 # Generate missing data
@@ -62,10 +62,16 @@ def seq_missing(data,p):
         # construct the average observed length for this sequence
         obs_length=data.shape[1]-np.random.binomial(data.shape[1],p)
         # decide where this subsequence starts (other data set to be 'None')
-        if obs_length>0:
-            start_point=np.random.randint(0,data.shape[1])
+        if obs_length==data.shape[1]:
+            data[i,:]=data[i,:]
+        elif obs_length==0:
+            data[i,:]='None'
+        else:
+            start_point=np.random.randint(0,data.shape[1]-obs_length)
+            #start_point=np.random.randint(0,data.shape[1])
             data[i,0:start_point]='None'
-            data[i,min(start_point+obs_length,data.shape[1]):data.shape[1]]='None'
+            data[i,start_point+obs_length:data.shape[1]]='None'
+            #data[i,min(start_point+obs_length,data.shape[1]):data.shape[1]]='None'
     return data
 
-data=seq_missing(data,p=0.4)
+data=seq_missing(data,p=0.1)
