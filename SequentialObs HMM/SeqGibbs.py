@@ -1,6 +1,8 @@
 
 
 
+
+
 # -*- coding: utf-8 -*-
 """
 Created on Thu Nov  4 14:58:05 2021
@@ -184,6 +186,7 @@ def sample_A(data,I,A):
         new_A[j,j]=new_a
         new_A[j,j+1]=1-new_a
         
+        
         # initialize the old and new log likelihood
         log_p=0
         log_new_p=0
@@ -192,13 +195,14 @@ def sample_A(data,I,A):
             # renew the log likelihood function based on each observation
             # indexer: indices that does not miss
             indexer=np.where(I[i]!='None')[0]
+            
+            # otherwise we just skip the sequence that is totally missing
             if indexer.size!=0:
                 # the starting state of the whole sequence
                 pos=np.where(HMM.hidden_state==I[i][indexer[0]])[0][0]
                 # renew the log likelihood
                 log_p=log_p+np.log(np.linalg.matrix_power(A,indexer[0])[0][pos])
                 log_new_p=log_new_p+np.log(np.linalg.matrix_power(new_A,indexer[0])[0][pos])
-        
         
         
         
@@ -214,8 +218,10 @@ def sample_A(data,I,A):
             change_freq=change_freq+np.sum(np.logical_and(tmp_b,tmp_c))
         
         
+        
         log_p=log_p+stay_freq*np.log(a)+change_freq*np.log(1-a)
         log_new_p=log_new_p+stay_freq*np.log(new_a)+change_freq*np.log(1-new_a)
+        
         
         
         # Finally, perform M-H step
@@ -232,15 +238,49 @@ def sample_A(data,I,A):
         if np.log(u)<r:
             A[j,j]=new_a
             A[j,j+1]=1-new_a
+            
         else:
             A[j,j]=a
             A[j,j+1]=1-a
             
-        
     
     return A
     
-      
+
+# evaluate the log-likelihood of the estimation that helps selecting the prediction
+def p_evaluator(A,B,I,data):    
+    obs_state=HMM.obs_state
+    hidden_state=HMM.hidden_state
+    # initialize the log likelihood
+    log_p=0
+    
+    # first compute log likelihood of B
+    alpha=np.array([1,1,1,1,1])
+    log_p=stats.dirichlet.logpdf(B[0,:],alpha)+stats.dirichlet.logpdf(B[1,:],alpha)
+    +stats.dirichlet.logpdf(B[2,:],alpha)+stats.dirichlet.logpdf(B[3,:],alpha)
+    +stats.dirichlet.logpdf(B[4,:],alpha)
+    
+    # Then compute the loglikelihood of Y|Z,B and Z
+    for i in range(0,I.shape[0]):
+        # indices of observed data
+        indexer=np.where(I[i]!='None')[0]
+        for j in range(0,len(indexer)):
+            
+            y_indice=np.where(obs_state==data[i][indexer[j]])[0][0]
+            z_indice=np.where(hidden_state==I[i][indexer[j]])[0][0]
+            log_y=np.log(B[z_indice,y_indice])
+            if j==0:
+                log_z=np.log(np.linalg.matrix_power(A,indexer[0])[0][z_indice])
+                z_past_indice=z_indice
+            else:
+                log_z=np.log(A[z_past_indice,z_indice])
+                z_past_indice=z_indice
+            log_p=log_p+log_z+log_y
+    return log_p
+
+
+           
+                
         
         
 
@@ -256,6 +296,10 @@ def parallel_Gibbs(data,I,A,B,n):
     
     # calculate the data size
     ds=data.shape[0]
+    
+    # construct a buffer to store the latent sequence with largest likelihood
+    I_buffer=I.copy()
+    log_p=p_evaluator(A,B,I_buffer,data)
     
     for i in range(0,n):
         print(i)
@@ -285,13 +329,21 @@ def parallel_Gibbs(data,I,A,B,n):
         I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
         #I=sample_latent_seq(data,I,A,B)
         
+        '''
+        new_log_p=p_evaluator(new_A,B,I,data)
+        
+        if new_log_p>log_p:
+            I_buffer=I.copy()
+            log_p=new_log_p
+            print('renewed!')
         
         
+        '''
         
     post_A=np.array(post_A)
     post_B=np.array(post_B)
     
-    return post_A,post_B
+    return post_A,post_B,I_buffer
         
                   
 if __name__=='__main__':
@@ -299,5 +351,5 @@ if __name__=='__main__':
     
     
     p=Pool(8)
-    post_A,post_B=parallel_Gibbs(data,I,A,B,6000)
+    post_A,post_B,latent_seq=parallel_Gibbs(data,I,A,B,6000)
     
