@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Nov  4 15:48:43 2021
 
-@author: s1155151972
-"""
 
 
 # -*- coding: utf-8 -*-
@@ -29,6 +24,7 @@ def data_initializer():
 
     # Initialize transition matrix A
     A=np.array([[0.5,0.5,0,0,0],[0,0.5,0.5,0,0],[0,0,0.5,0.5,0],[0,0,0,0.5,0.5],[0,0,0,0,1]])
+    
 
     # Initialize observation matrix B
     B=np.random.dirichlet((1,1,1,1,1),5)
@@ -136,6 +132,14 @@ def sample_B(data,I,B):
     return new_B
 
 
+
+
+
+
+
+
+
+'''
 # Sample A out based on the full latent sequence
 # Algorithm based on Resarch note in 2021.10.29
 # A: transition matrix from the last iteration
@@ -166,6 +170,80 @@ def sample_A(data,I,A):
         A[j,j+1]=A_posterior[1]
     return A
 
+'''
+
+### Sample A using Metropolis-Within-Gibbs
+# A: transition matrix from the last iteration
+def sample_A(data,I,A):
+    
+    for j in range(0,A.shape[0]-1):
+        new_A=A.copy()
+        a=A[j,j]
+        
+        new_a=np.random.beta(2,1/a,1)[0]
+        new_A[j,j]=new_a
+        new_A[j,j+1]=1-new_a
+        
+        # initialize the old and new log likelihood
+        log_p=0
+        log_new_p=0
+        
+        for i in range(0,I.shape[0]):
+            # renew the log likelihood function based on each observation
+            # indexer: indices that does not miss
+            indexer=np.where(I[i]!='None')[0]
+            if indexer.size!=0:
+                # the starting state of the whole sequence
+                pos=np.where(HMM.hidden_state==I[i][indexer[0]])[0][0]
+                # renew the log likelihood
+                log_p=log_p+np.log(np.linalg.matrix_power(A,indexer[0])[0][pos])
+                log_new_p=log_new_p+np.log(np.linalg.matrix_power(new_A,indexer[0])[0][pos])
+        
+        
+        
+        
+        stay_freq=0
+        change_freq=0
+        # Count how many times it happens that the chain stays 
+        for k in range(0,I.shape[1]-1):
+            #print(freq)
+            tmp_a=(I[:,k]==I[:,k+1])
+            tmp_b=(I[:,k]==HMM.hidden_state[j])
+            stay_freq=stay_freq+np.sum(np.logical_and(tmp_a,tmp_b))
+            tmp_c=(I[:,k]!=I[:,k+1])
+            change_freq=change_freq+np.sum(np.logical_and(tmp_b,tmp_c))
+        
+        
+        log_p=log_p+stay_freq*np.log(a)+change_freq*np.log(1-a)
+        log_new_p=log_new_p+stay_freq*np.log(new_a)+change_freq*np.log(1-new_a)
+        
+        
+        # Finally, perform M-H step
+        
+        if log_p==np.inf:
+            print('oops!')
+            r=0
+        else:
+            r=log_new_p+np.log(stats.beta.pdf(a,2,1/new_a))-log_p-np.log(stats.beta.pdf(new_a,2,1/a))
+            r=min(0,r)
+            
+        u=np.random.uniform(0,1,1)[0]
+        
+        if np.log(u)<r:
+            A[j,j]=new_a
+            A[j,j+1]=1-new_a
+        else:
+            A[j,j]=a
+            A[j,j+1]=1-a
+            
+        
+    
+    return A
+    
+      
+        
+        
+
 
 
 # Gibbs Sampling accelerated by parallel computing
@@ -183,7 +261,10 @@ def parallel_Gibbs(data,I,A,B,n):
         print(i)
         A=sample_A(data,I,A)
         B=sample_B(data,I,B)
+        new_A=A.copy()
+        post_A.append(new_A)
         print(A)
+        post_B.append(B)
         
         
         
@@ -206,10 +287,10 @@ def parallel_Gibbs(data,I,A,B,n):
         
         
         
-        post_A.append(A)
-        post_B.append(B)
+        
     post_A=np.array(post_A)
     post_B=np.array(post_B)
+    
     return post_A,post_B
         
                   
@@ -218,8 +299,5 @@ if __name__=='__main__':
     
     
     p=Pool(8)
-    post_A,post_B=parallel_Gibbs(data,I,A,B,100)
-    
-    
-    print('Program finished')
+    post_A,post_B=parallel_Gibbs(data,I,A,B,6000)
     
