@@ -155,10 +155,14 @@ def sample_B(data,I,B):
 # evaluate the likelihood of a sequqnce given A
 def p_seq(seq,A):
     hidden_state=HMM.hidden_state
-    indexer=np.where(seq!='None')[0]
+    indexer=np.array(np.where(seq!='None')[0])
     log_p=0
             
     # in case that the whole sequence is missing
+    if indexer.size==1:
+        pos=np.where(hidden_state==seq[indexer[0]])[0][0]
+        log_p=np.log(np.linalg.matrix_power(A,indexer[0]))[0][pos]
+    
     if indexer.size>1:
         # We always assume start from a specific state
         if indexer[0]!=0:
@@ -240,7 +244,7 @@ def p_observe(hidden_seq,obs_seq,B):
     obs_state=HMM.obs_state
     
     # indices of the observed data
-    indexer=np.where(hidden_seq!='None')[0]
+    indexer=np.array(np.where(hidden_seq!='None')[0])
     
     # initialize the log likelihood
     log_y=0
@@ -280,37 +284,15 @@ def p_evaluator(A,B,I,data):
     log_z=sum(p.starmap(p_seq,[(seq,A) for seq in I]))
     # log_y is the log likelihood of the observed sequence
     log_y=sum(p.starmap(p_observe,[(I[i],data[i],B) for i in range(0,I.shape[0])]))
+    
+    print('log_y', log_y)
+    print('log_z', log_z)
+    
         
-    log_p=log_z+log_y
+    log_p=log_p+log_z+log_y
         
         
-    '''
-        # indices of observed data
-        indexer=np.where(I[i]!='None')[0]
-        
-        # in case that the whole sequence is missing
-        if indexer.size>1:
-            # We always assume start from a specific state
-            if indexer[0]!=0:
-                # the corresponding state of z in this index
-                z_pos=np.where(hidden_state==I[i][indexer[0]])[0][0]
-                # the corresponding state of y in this index
-                y_pos=np.where(obs_state==data[i][indexer[0]])[0][0]
-                # the log likelihood of z_t|z_{t-1} and y_t|z_t,B
-                log_p=log_p+np.log(np.linalg.matrix_power(A,indexer[0])[0][z_pos])+np.log(B[z_pos,y_pos])
-                    
-                
-            for k in range(0,len(indexer)-1):
-                # the log likelihood of z_t|z_{t-1} and y_t|z_t,B
-                current_pos=np.where(hidden_state==I[i][indexer[k]])[0][0]
-                future_pos=np.where(hidden_state==I[i][indexer[k+1]])[0][0]
-                log_p=log_p+np.log(np.linalg.matrix_power(A,indexer[k+1]-indexer[k])[current_pos][future_pos])
-                
-                # compute the corresponding state of z and y in this index
-                y_pos=np.where(obs_state==data[i][indexer[k]])[0][0]
-                z_pos=current_pos
-                log_p=log_p+np.log(B[z_pos,y_pos])
-    '''
+    
         
     return log_p
 
@@ -383,7 +365,7 @@ if __name__=='__main__':
     
     
     p=Pool(8)
-    post_A,post_B,latent_seq=parallel_Gibbs(data,I,A,B,1000)
+    post_A,post_B,latent_seq=parallel_Gibbs(data,I,A,B,1500)
     
     
     print('Program finished')
