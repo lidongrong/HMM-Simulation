@@ -42,7 +42,13 @@ def data_initializer():
     data=Sampling.data
 
     # Initialize transition matrix A
-    A=np.array([[0.5,0.5,0,0,0],[0,0.5,0.5,0,0],[0,0,0.5,0.5,0],[0,0,0,0.5,0.5],[0,0,0,0,1]])
+    
+    a=np.random.dirichlet((1,1),4)
+    
+    
+    A=np.array([[a[0][0],1-a[0][0],0,0,0],[0,a[1][0],1-a[1][0],0,0],
+                [0,0,a[2][0],1-a[2][0],0],[0,0,0,a[3][0],1-a[3][0]],[0,0,0,0,1]])
+    print(A)
 
     # Initialize observation matrix B
     B=np.random.dirichlet((1,1,1,1,1),5)
@@ -370,7 +376,7 @@ if __name__=='__main__':
     
     
     p=Pool(8)
-    post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,1500)
+    post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,3500)
     
     
     print('Program finished')
