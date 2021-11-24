@@ -38,3 +38,9 @@ plt.plot(np.arange(0,len(b44)),b44)
 
 b54=post_B[:,4,3]
 plt.plot(np.arange(0,len(b54)),b54)
+
+#Acquire the likelihood of the model with true parameters & latent sequence
+for i in range(0,I.shape[0]):
+    for j in range(0,I.shape[1]):
+        if I[i,j]!='None':
+            I[i,j]=Sampling.hidden_data[i,j]
