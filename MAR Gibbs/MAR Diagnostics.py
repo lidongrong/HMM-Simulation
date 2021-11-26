@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Nov 23 15:54:09 2021
-
-@author: s1155151972
-"""
-
-
-# -*- coding: utf-8 -*-
-"""
 Created on Fri Nov 26 11:19:29 2021
 
 @author: s1155151972
@@ -255,6 +247,24 @@ plt.plot(np.arange(0,len(log_prob4)),log_prob4,'purple',label='Experiment4')
 plt.plot(np.arange(0,len(log_prob1)),np.repeat(true_log_p,len(log_prob4)),'black',label='True Value')
 plt.xlabel('iteration')
 plt.legend(loc='best')
+
+# Display accuracy
+data1=np.load('Experiment1/data.npy')
+hidden_seq1=np.load('Experiment1/TrueHidden.npy')
+data2=np.load('Experiment2/data.npy')
+hidden_seq2=np.load('Experiment2/TrueHidden.npy')
+data3=np.load('Experiment3/data.npy')
+hidden_seq3=np.load('Experiment3/TrueHidden.npy')
+data4=np.load('Experiment4/data.npy')
+hidden_seq4=np.load('Experiment4/TrueHidden.npy')
+
+acc1=np.sum(latent_seq1==hidden_seq1)/np.sum(data1!='None')
+acc2=np.sum(latent_seq2==hidden_seq2)/np.sum(data2!='None')
+acc3=np.sum(latent_seq3==hidden_seq3)/np.sum(data3!='None')
+acc4=np.sum(latent_seq4==hidden_seq4)/np.sum(data4!='None')
+
+
+
 
 
 
