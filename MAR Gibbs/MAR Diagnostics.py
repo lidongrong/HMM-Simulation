@@ -270,6 +270,7 @@ acc4=np.sum(latent_seq4==hidden_seq4)/np.sum(data4!='None')
 
 # Accuracy of each Subtype:
 
+# We compute accuracy chainwisely. acc1 stands for the accuracy of the first chain.
 acc1=[]
 for k in hidden_state:
     acc1.append(np.sum((latent_seq1==hidden_seq1)*(latent_seq1==k))/np.sum(h==k))
