@@ -249,6 +249,9 @@ plt.xlabel('iteration')
 plt.legend(loc='best')
 
 # Display accuracy
+
+
+
 data1=np.load('Experiment1/data.npy')
 hidden_seq1=np.load('Experiment1/TrueHidden.npy')
 data2=np.load('Experiment2/data.npy')
@@ -262,6 +265,34 @@ acc1=np.sum(latent_seq1==hidden_seq1)/np.sum(data1!='None')
 acc2=np.sum(latent_seq2==hidden_seq2)/np.sum(data2!='None')
 acc3=np.sum(latent_seq3==hidden_seq3)/np.sum(data3!='None')
 acc4=np.sum(latent_seq4==hidden_seq4)/np.sum(data4!='None')
+
+# Compute the accuracy according to subtype
+
+# Accuracy of each Subtype:
+
+acc1=[]
+for k in hidden_state:
+    acc1.append(np.sum((latent_seq1==hidden_seq1)*(latent_seq1==k))/np.sum(h==k))
+    
+acc2=[]
+for k in hidden_state:
+    acc2.append(np.sum((latent_seq2==hidden_seq2)*(latent_seq2==k))/np.sum(h==k))
+
+acc3=[]
+for k in hidden_state:
+    acc3.append(np.sum((latent_seq3==hidden_seq2)*(latent_seq3==k))/np.sum(h==k))
+
+acc4=[]
+for k in hidden_state:
+    acc4.append(np.sum((latent_seq4==hidden_seq2)*(latent_seq4==k))/np.sum(h==k))
+
+
+
+
+
+
+
+
 
 
 
