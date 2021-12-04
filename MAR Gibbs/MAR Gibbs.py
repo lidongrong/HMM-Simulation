@@ -43,7 +43,7 @@ def data_initializer():
 
     # Initialize transition matrix A
     
-    a=np.random.dirichlet((1,1),4)
+    a=np.random.dirichlet((2,2),4)
     
     
     A=np.array([[a[0][0],1-a[0][0],0,0,0],[0,a[1][0],1-a[1][0],0,0],
@@ -368,15 +368,37 @@ def parallel_Gibbs(data,I,A,B,n):
     log_prob=np.array(log_prob)
     
     return post_A,post_B,I_buffer,log_prob
-        
-                    
+
+
+# define the output class of the experiments
+class Out:
+    def __init__(self,data,post_A,post_B,latent_seq,log_prob,true_hidden):
+        self.data=data
+        self.post_A=post_A
+        self.post_B=post_B
+        self.latent_seq=latent_seq
+        self.log_prob=log_prob
+        self.true_hidden=true_hidden
+ 
+
+
+                   
 if __name__=='__main__':
-    A,B,data,I=initialize()
-    
-    
     
     p=Pool(8)
-    post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,3500)
+    
+    
+    # Define the output object class
+    # Which is a list of Out objects 
+    out_obj=[]
+    
+    for i in range(0,10):
+        A,B,data,I=initialize()
+        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,5000)
+        out_obj.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
+        
+    
+    
     
     
     print('Program finished')
