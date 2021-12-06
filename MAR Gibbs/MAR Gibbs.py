@@ -48,7 +48,6 @@ def data_initializer():
     
     A=np.array([[a[0][0],1-a[0][0],0,0,0],[0,a[1][0],1-a[1][0],0,0],
                 [0,0,a[2][0],1-a[2][0],0],[0,0,0,a[3][0],1-a[3][0]],[0,0,0,0,1]])
-    print(A)
 
     # Initialize observation matrix B
     B=np.random.dirichlet((1,1,1,1,1),5)
@@ -207,16 +206,13 @@ def sample_A(data,I,A):
         log_p=0
         log_new_p=0
         # evaluate the likelihood of current state and proposed state
-        '''
-        for k in range(0,I.shape[0]):
-            
-            log_p=log_p+p_seq(I[k],A)
-            log_new_p=log_new_p+p_seq(I[k],new_A)
-            '''
         
         # p is the pool variable in global main function
-        log_p=np.sum(p.starmap(p_seq,[(seq,A) for seq in I]))
-        log_new_p=np.sum(p.starmap(p_seq,[(seq,new_A) for seq in I]))
+        
+        log_p=sum(p.starmap(p_seq,[(seq,A) for seq in I]))
+        log_new_p=sum(p.starmap(p_seq,[(seq,new_A) for seq in I]))
+        
+        
             
             
             
@@ -242,12 +238,22 @@ def sample_A(data,I,A):
     return A
 
 
+# Locate the indexer of a specific element in hidden_state
+def hidden_loc(element):
+    return np.where(HMM.hidden_state==element)[0][0]
+
+# Locate the indexer of a specific element in obs_seq
+def obs_loc(element):
+    return np.where(HMM.obs_state==element)[0][0]
+
+vhidden_loc=np.vectorize(hidden_loc)
+vobs_loc=np.vectorize(obs_loc)
 
 # evaluate the likelihood of an observed sequence
 # seq_hidden, seq_obs: latent sequqnce and observed sequqnce respectively
 def p_observe(hidden_seq,obs_seq,B):
-    hidden_state=HMM.hidden_state
-    obs_state=HMM.obs_state
+    #hidden_state=HMM.hidden_state
+    #obs_state=HMM.obs_state
     
     # indices of the observed data
     indexer=np.array(np.where(hidden_seq!='None')[0])
@@ -257,10 +263,16 @@ def p_observe(hidden_seq,obs_seq,B):
     
     # in case the whole sequqnce is missing
     if indexer.size>=1:
+        '''
         for k in range(0,len(indexer)):
             z_pos=np.where(hidden_state==hidden_seq[indexer[k]])[0][0]
             y_pos=np.where(obs_state==obs_seq[indexer[k]])[0][0]
             log_y=log_y+np.log(B[z_pos,y_pos])
+            '''
+        
+        z_pos=vhidden_loc(hidden_seq[indexer])
+        y_pos=vobs_loc(obs_seq[indexer])
+        log_y=np.sum(np.log(B[z_pos,y_pos]))
     
     return log_y
             
@@ -321,15 +333,17 @@ def parallel_Gibbs(data,I,A,B,n):
     for i in range(0,n):
         start=time.time()
         print(i)
+        
         A=sample_A(data,I,A)
+        
         B=sample_B(data,I,B)
         new_A=A.copy()
         post_A.append(new_A)
-        #print(A)
+        print(A)
         post_B.append(B)
         
         
-        
+        '''
         I=p.starmap(sample_latent_seq,[(data[0:ds//8,:],I[0:ds//8,:],A,B),(data[ds//8:2*ds//8,:],
                                                                      I[ds//8:2*ds//8,:],A,B),(data[2*ds//8:3*ds//8,:],
                                                                                          I[2*ds//8:3*ds//8,:],A,B),
@@ -343,8 +357,14 @@ def parallel_Gibbs(data,I,A,B,n):
                                                                                           I[6*ds//8:7*ds//8,:],A,B),
                                                                                          (data[7*ds//8:,:],
                                                                                           I[7*ds//8:,:],A,B)])
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
-        I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
+        '''
+        
+        I=p.starmap(f_b_sampling,[(A,B,data[i]) for i in range(0,I.shape[0])])
+        I=np.array(I)
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+        #I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
         #I=sample_latent_seq(data,I,A,B)
         
         
@@ -356,7 +376,7 @@ def parallel_Gibbs(data,I,A,B,n):
         if new_log_p>log_p:
             I_buffer=I.copy()
             log_p=new_log_p
-            
+        
         
         end=time.time()
         print(end-start)
@@ -385,6 +405,7 @@ class Out:
                    
 if __name__=='__main__':
     
+    # Code deployed on an 8-core CPU
     p=Pool(8)
     
     
@@ -394,7 +415,7 @@ if __name__=='__main__':
     
     for i in range(0,10):
         A,B,data,I=initialize()
-        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,4500)
+        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,4200)
         out_obj.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
         
     
