@@ -291,8 +291,6 @@ def p_evaluator(A,B,I,data):
     # log_y is the log likelihood of the observed sequence
     log_y=sum(p.starmap(p_observe,[(I[i],data[i],B) for i in range(0,I.shape[0])]))
     
-    print('log_y', log_y)
-    print('log_z', log_z)
     
         
     log_p=log_p+log_z+log_y
@@ -321,12 +319,13 @@ def parallel_Gibbs(data,I,A,B,n):
     log_prob.append(log_p)
     
     for i in range(0,n):
+        start=time.time()
         print(i)
         A=sample_A(data,I,A)
         B=sample_B(data,I,B)
         new_A=A.copy()
         post_A.append(new_A)
-        print(A)
+        #print(A)
         post_B.append(B)
         
         
@@ -351,7 +350,6 @@ def parallel_Gibbs(data,I,A,B,n):
         
         new_log_p=p_evaluator(new_A,B,I,data)
         #new_log_p=1
-        print(new_log_p)
         
         log_prob.append(new_log_p)
         
@@ -360,6 +358,8 @@ def parallel_Gibbs(data,I,A,B,n):
             log_p=new_log_p
             
         
+        end=time.time()
+        print(end-start)
         
         
         
@@ -372,7 +372,7 @@ def parallel_Gibbs(data,I,A,B,n):
 
 # define the output class of the experiments
 class Out:
-    def __init__(self,data,post_A,post_B,latent_seq,log_prob,true_hidden):
+    def __init__(self,data,post_A,post_B,latent_seq, log_prob,true_hidden):
         self.data=data
         self.post_A=post_A
         self.post_B=post_B
@@ -394,7 +394,7 @@ if __name__=='__main__':
     
     for i in range(0,10):
         A,B,data,I=initialize()
-        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,5000)
+        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,4500)
         out_obj.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
         
     
