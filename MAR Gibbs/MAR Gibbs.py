@@ -33,6 +33,7 @@ import time
 from multiprocessing import Pool
 import scipy.stats as stats
 import math
+import os
 
 
 
@@ -322,8 +323,6 @@ def parallel_Gibbs(data,I,A,B,n):
     post_B=[]
     log_prob=[]
     
-    # calculate the data size
-    ds=data.shape[0]
     
     # construct a buffer to store the latent sequence with largest likelihood
     I_buffer=I.copy()
@@ -343,30 +342,11 @@ def parallel_Gibbs(data,I,A,B,n):
         post_B.append(B)
         
         
-        '''
-        I=p.starmap(sample_latent_seq,[(data[0:ds//8,:],I[0:ds//8,:],A,B),(data[ds//8:2*ds//8,:],
-                                                                     I[ds//8:2*ds//8,:],A,B),(data[2*ds//8:3*ds//8,:],
-                                                                                         I[2*ds//8:3*ds//8,:],A,B),
-                                                                                         (data[3*ds//8:4*ds//8,:],
-                                                                                          I[3*ds//8:4*ds//8,:],A,B),
-                                                                                         (data[4*ds//8:5*ds//8,:],
-                                                                                          I[4*ds//8:5*ds//8,:],A,B),
-                                                                                         (data[5*ds//8:6*ds//8,:],
-                                                                                          I[5*ds//8:6*ds//8,:],A,B),
-                                                                                         (data[6*ds//8:7*ds//8,:],
-                                                                                          I[6*ds//8:7*ds//8,:],A,B),
-                                                                                         (data[7*ds//8:,:],
-                                                                                          I[7*ds//8:,:],A,B)])
-        '''
+        
         
         I=p.starmap(f_b_sampling,[(A,B,data[i]) for i in range(0,I.shape[0])])
         I=np.array(I)
 
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-        #I=np.vstack((I[0],I[1],I[2],I[3],I[4],I[5],I[6],I[7]))
-        #I=sample_latent_seq(data,I,A,B)
-        
         
         new_log_p=p_evaluator(new_A,B,I,data)
         #new_log_p=1
@@ -406,7 +386,7 @@ class Out:
 if __name__=='__main__':
     
     # Code deployed on an 8-core CPU
-    p=Pool(8)
+    p=Pool(16)
     
     
     # Define the output object class
@@ -415,10 +395,21 @@ if __name__=='__main__':
     
     for i in range(0,10):
         A,B,data,I=initialize()
-        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,4200)
+        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,50)
         out_obj.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
         
+   
     
+
+    for i in range(0,len(out_obj)):
+        os.mkdir(f'Experiment{i}')
+        # Save the results
+        np.save(f'Experiment{i}/Post_A.npy',out_obj[i].post_A)
+        np.save(f'Experiment{i}/Post_B.npy',out_obj[i].post_B)
+        np.save(f'Experiment{i}/latent_seq.npy',out_obj[i].latent_seq)
+        np.savetxt(f'Experiment{i}/log_prob.txt',out_obj[i].log_prob)
+        np.save(f'Experiment{i}/data.npy',out_obj[i].data)
+        np.save(f'Experiment{i}/TrueHidden.npy',out_obj[i].true_hidden)
     
     
     
