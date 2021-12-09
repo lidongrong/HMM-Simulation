@@ -34,6 +34,7 @@ from multiprocessing import Pool
 import scipy.stats as stats
 import math
 import os
+import multiprocessing as mp
 
 
 
@@ -386,7 +387,7 @@ class Out:
 if __name__=='__main__':
     
     # Code deployed on an 8-core CPU
-    p=Pool(16)
+    p=Pool(mp.cpu_count())
     
     
     # Define the output object class
@@ -395,13 +396,9 @@ if __name__=='__main__':
     
     for i in range(0,10):
         A,B,data,I=initialize()
-        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,50)
+        post_A,post_B,latent_seq,log_prob=parallel_Gibbs(data,I,A,B,6000)
         out_obj.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
         
-   
-    
-
-    for i in range(0,len(out_obj)):
         os.mkdir(f'Experiment{i}')
         # Save the results
         np.save(f'Experiment{i}/Post_A.npy',out_obj[i].post_A)
