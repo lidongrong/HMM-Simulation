@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import math
 
 # num specifies the total experiments that has been run
-num=10
+num=8
 
 # Save the data
 for i in range(0,num):
@@ -45,7 +45,11 @@ for i in range(0,num):
     data=np.load(f'Experiment{i}/data.npy')
     hidden_seq=np.load(f'Experiment{i}/TrueHidden.npy')
     
-    output.append(Out(data,post_A,post_B,latent_seq,log_prob,Sampling.hidden_data))
+    output.append(Out(data,post_A,post_B,latent_seq,log_prob,hidden_seq))
+
+
+output=output[0:6]
+num=6
 
 
 color_bar=['red','blue','green','pink','k','violet','gold','brown','c','m']
@@ -142,6 +146,8 @@ for i in range(0,num):
 for i in range(0,len(output)):
     acc=np.sum(output[i].latent_seq==output[i].true_hidden)/np.sum(output[i].data!='None')
     print(acc)
+
+
 
 
 
