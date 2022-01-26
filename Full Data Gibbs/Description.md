@@ -1,3 +1,3 @@
 A Gibbs sampler for Bayesian Hidden Markov model
 
-The Gibbs sampler is implemented on a dataset without missing. The latent sequence is selected based on the maximizer of posterior.
+The Gibbs sampler is implemented on a dataset with missing. The full latent sequence is selected based on forward-backward sampling.
