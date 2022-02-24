@@ -204,7 +204,7 @@ def ph(obs,A,B,pi,t,hidden_state,obs_state):
 # a specifically designed parallel function for updating B
 # compute p(y_o,z_t)*I(y_o_t==y_t), return a vector indicating each y
 # j: the index of z
-def ph_seq(obs,A,B,pi,j,hidden_state,obs_state):
+def ph_seq_obs(obs,A,B,pi,j,hidden_state,obs_state):
     h=hidden_state
     o=obs_state
     #out=sum([ph(obs,A,B,pi,t,h,o)*((o==obs[t]).astype(np.int32)) for t in range(0,len(obs))])
@@ -214,6 +214,20 @@ def ph_seq(obs,A,B,pi,j,hidden_state,obs_state):
     out2=out2.astype(np.int)
     out=np.dot(out1,out2.T)
     return out
+
+# a function for updating B
+# compute summation of p(y_o,z_t=z,y_t=y) for all t
+# return a vector indicating the value for each y
+# j: index of z
+def ph_seq_mis(obs,A,B,pi,j,hidden_state,obs_state):
+    indexer=np.where(obs=='None')[0]
+    alph,bet=us_alpha_and_beta(obs,A,B,pi,hidden_state,obs_state)
+    temp=alph[indexer,j]*bet[indexer,j]
+    out=sum(temp)*B[j,:]
+    
+    return out
+    
+
 
 # evaluate p(y_o|theta)
 def p_obs(obs,A,B,pi,hidden_state,obs_state):
@@ -292,9 +306,12 @@ def update_B(A,B,pi,data,hidden_state,obs_state,prob,p):
     new_B=B.copy()
     
     for j in range(0,B.shape[0]):
-        propose=p.starmap(ph_seq,[(data[r],A,B,pi,j,h,o) for r in range(0,data.shape[0])])
+        propose1=p.starmap(ph_seq_obs,[(data[r],A,B,pi,j,h,o) for r in range(0,data.shape[0])])
+        propose2=p.starmap(ph_seq_mis,[(data[r],A,B,pi,j,h,o) for r in range(0,data.shape[0])])
         #prob=p.starmap(p_obs,[(data[r],A,B,pi,h,o) for r in range(0,data.shape[0]) ])
-        propose=np.array(propose)
+        propose1=np.array(propose1)
+        propose2=np.array(propose2)
+        propose=propose1+propose2
         #prob=np.array(prob)
         propose=propose.T/prob
         propose=propose.T
@@ -359,8 +376,87 @@ def EMTrain(A,B,pi,data,e,hidden_state,obs_state,p):
     
     return A_trace,B_trace,pi_trace
 
-
+# implement the stochastic EM trainging procedure
+# all parameters are just like EMTrain
+# batch_size is the batchsize for each training
+# epoch: number of epochs
+def SEMTrain(A,B,pi,data,batch_size,epoch,hidden_state,obs_state,p):
+    pi=pi
+    A=A
+    B=B
+    h=hidden_state
+    o=obs_state
     
+    A_trace=[]
+    B_trace=[]
+    pi_trace=[]
+    
+    prob=y_prob(data[0:batch_size],A,B,pi,h,o,p)
+    new_A=update_A(A,B,pi,data[0:batch_size],h,o,prob,p)
+    new_B=update_B(A,B,pi,data[0:batch_size],h,o,prob,p)
+    new_pi=update_pi(A,B,pi,data[0:batch_size],h,o,prob,p)
+
+    # test code
+    print(new_pi)
+    print(new_A)
+    print(new_B)
+    
+    iteration=0
+    
+    print('step',step(A,B,pi,new_A,new_B,new_pi))
+    
+    total_iteration=epoch*(data.shape[0]// batch_size)
+    
+    while iteration<total_iteration:
+        
+        # select the batch index
+        # low index is the starting index
+        low_index=(iteration*batch_size)%data.shape[0]
+        high_index=min(low_index+batch_size,data.shape[0])
+        batch=data[low_index:high_index,:]
+        
+        # at the start of each epoch, permute the data
+        if low_index-batch_size==0:
+            permute=np.random.permutation(range(0,data.shape[0]))
+            data=data[permute]
+        
+        
+        iteration+=1
+        print('Step:',step(A,B,pi,new_A,new_B,new_pi))
+        print('Iteration',iteration)
+        pi=new_pi.copy()
+        B=new_B.copy()
+        A=new_A.copy()
+        start=time.time()
+        prob=y_prob(batch,A,B,pi,h,o,p)
+        new_pi=update_pi(A,B,pi,batch,h,o,prob,p)
+        new_A=update_A(A,B,pi,batch,h,o,prob,p)
+        new_B=update_B(A,B,pi,batch,h,o,prob,p)
+        print(new_pi)
+        print(new_A)
+        print(new_B)
+        end=time.time()
+        print('Use Time',end-start)
+        A_trace.append(new_A)
+        B_trace.append(new_B)
+        pi_trace.append(new_pi)
+        
+    A_trace=np.array(A_trace)
+    B_trace=np.array(B_trace)
+    pi_trace=np.array(pi_trace)
+    
+    return A_trace,B_trace,pi_trace
+
+# define the output class of the experiments
+class Out:
+    def __init__(self,data,post_A,post_B,post_pi,latent_seq, log_prob,true_hidden):
+        self.data=data
+        self.post_A=post_A
+        self.post_B=post_B
+        self.post_pi=post_pi
+        self.latent_seq=latent_seq
+        self.log_prob=log_prob
+        self.true_hidden=true_hidden 
 
 
 
