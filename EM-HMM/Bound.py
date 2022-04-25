@@ -13,16 +13,16 @@ from EMHMM import*
 import math
 
 
-transition=np.array([[0.7,0.2,0.1],[0.1,0.8,0.1],[0.05,0.05,0.9]])
+transition=np.array([[0.7,0.2,0.1],[0.1,0.8,0.1],[0.1,0.1,0.8]])
 state=np.array(['0','1','2'])
 hidden_state=state
 obs_state=np.array(['Blue','Green','Yellow'])
-obs_prob=np.array([[0.7,0.2,0.1],
-                   [0.1,0.7,0.2],
-                   [0.2,0.1,0.7]
+obs_prob=np.array([[0.8,0.1,0.1],
+                   [0.1,0.8,0.1],
+                   [0.1,0.1,0.8]
     ])
 
-pi=np.array([0.1875, 0.3125, 0.5   ])
+pi=np.array([0.25      , 0.41666667, 0.33333333])
 
 
 
@@ -64,19 +64,30 @@ def MC_entropy(T,A,B,pi):
     return s
 
 
-eps=0.35
+eps=0.3
 T=20
 z=3
 # obs rate
-q=0.9
+#q=0.9
 # p=(MC_entropy(T,transition,obs_prob,pi)-1-T*q*(np.log2(3)-entropy(obs_prob[0]))-np.log2(eps_ball(T,eps,z)))
 # p=p/np.log2((3**T)/eps_ball(T,eps,z)-1)
 
 
 prec=[]
 
+# lower bound
+# q: observation proportion
 for q in [0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1]:
-    p=(MC_entropy(T,transition,obs_prob,pi)-1-T*q*(np.log2(3)-entropy(obs_prob[0]))-np.log2(eps_ball(T,eps,z)))
+    p=(MC_entropy(T,transition,obs_prob,pi)-1-T*q*(entropy(np.dot(pi,obs_prob))-entropy(obs_prob[0]))-np.log2(eps_ball(T,eps,z)))
     p=p/np.log2((3**T)/eps_ball(T,eps,z)-1)
     prec.append(p)
+
+# upper bound
+ubound=[]
+for q in [0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1]:
+    p=1/T*(T-T*q*(1/2**(entropy(pi)+entropy(obs_prob[0])-entropy(np.dot(pi,obs_prob))))-T*(1-q)*(1/2**(entropy(np.dot(pi,obs_prob)))))
+    ubound.append(p)
+
+    
+
     
