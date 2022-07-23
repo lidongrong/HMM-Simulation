@@ -34,19 +34,32 @@ pi=np.array([0.6,0.3,0.1])
 if __name__=='__main__':
     
     
+    
+    
     # Use multicore CPU
     p=Pool(16)
+    # missing rate, used to generate full data
     r=0
+    # total sample
     size=500
+    # seq length
     length=10
     A,B,pi0,data,I,hidden_data=initialize(hidden_state,obs_state,transition,obs_prob,pi,0,size,length)
-    A=np.random.dirichlet((8,8,8),3)
-    B=np.random.dirichlet((8,8,8),3)
-    pi0=np.random.dirichlet((8,8,8),3)[0]
+    # A=np.random.dirichlet((8,8,8),3)
+    # B=np.random.dirichlet((8,8,8),3)
+    # pi0=np.random.dirichlet((8,8,8),3)[0]
     # testing code
     #A=transition
     #B=obs_prob
     #pi0=pi
+    # total experiments
+    num=30
+    
+    # Construct list for starting time
+    # for i th exp for different missing rate, use same initial
+    A_start=[np.random.dirichlet((8,8,8),3) for i in range(0,num)]
+    B_start=[np.random.dirichlet((8,8,8),3) for i in range(0,num)]
+    pi_start=[np.random.dirichlet((8,8,8),3)[0] for i in range(0,num)]
     
     # acquire time
     t=datetime.now()
@@ -55,6 +68,7 @@ if __name__=='__main__':
     time_list='_'.join(time_list)
     #folder_name=f'BatchGMM{time_list}'
     
+    # Construct output path
     out_obj=[]
     file_name=f'Result{time_list}'
     os.mkdir(file_name)
@@ -70,7 +84,7 @@ if __name__=='__main__':
         os.mkdir(f'{complete_path}/Missingrate{rate}')
         print(os.getcwd())
         # total number of experiments
-        num=25
+        
         out_obj=[]
         
         #size=5
@@ -96,9 +110,10 @@ if __name__=='__main__':
             #A=np.array([[0.4,0.3,0.3],[0.3,0.4,0.3],[0.3,0.3,0.4]])
             #B=np.array([[0.4,0.3,0.3],[0.3,0.4,0.3],[0.3,0.3,0.4]])
             #pi0=np.array([0.4,0.3,0.3])
-            A=np.random.dirichlet((8,8,8),3)
-            B=np.random.dirichlet((8,8,8),3)
-            pi0=np.random.dirichlet((8,8,8),3)[0]
+            # for i th experiment under missing rate p, use same initial
+            A=A_start[i]
+            B=B_start[i]
+            pi0=pi_start[i]
             #prob=y_prob(data,transition,obs_prob,pi,hidden_state,obs_state,p)
             
             
@@ -106,14 +121,17 @@ if __name__=='__main__':
             
             # Our Approach
             #print('True Obj Func: ',sum(np.log(prob)))
+            print('Our Approach')
             at,bt,pit,func=EMTrain(A,B,pi0,data1,0.0001,hidden_state,obs_state,p)
             
             # Naive Approach
             #prob=y_prob(data1,transition,obs_prob,pi,hidden_state,obs_state,p)
             #print('True Obj Func: ',sum(np.log(prob)))
+            print('Naive Approach')
             at1,bt1,pit1,func1=EMTrain(A,B,pi0,data2,0.0001,hidden_state,obs_state,p)
             
             # Based on Complete data
+            print('Approach Based on Complete Data')
             at2,bt2,pit2,func2=EMTrain(A,B,pi0,data,0.0001,hidden_state,obs_state,p)
             
             #Save our model
