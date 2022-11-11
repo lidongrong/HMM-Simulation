@@ -22,8 +22,8 @@ variates={'HBV': np.array(['HBeAg+ALT<=1ULN', 'HBeAg+ALT>1ULN', 'HBeAg-ALT<=1ULN
 
 
 pt=[]
-os.mkdir(f'{path}/DesignMatrix')
-new_path=f'{path}/DesignMatrix'
+os.mkdir(f'{path}/DesignMatrix1')
+new_path=f'{path}/DesignMatrix1'
 strange=[]
 strange=pd.Series(strange)
 for i in range(0,len(pid)):
@@ -34,7 +34,7 @@ for i in range(0,len(pid)):
         p.construct_matrix()
         p.data.to_csv(f'{new_path}/{pid[i]}.csv')
     else:
-        strange[len(strange)]=i
+        strange[len(strange)]=pid[i]
         strange.to_csv(f'{new_path}/NoResultPatient.txt')
 
 strange=pd.DataFrame(strange)

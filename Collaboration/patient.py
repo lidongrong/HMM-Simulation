@@ -132,14 +132,14 @@ class patient:
             # FIRST STEP: ADD time specific features
             # Missing
             if t not in all_dates.array:
-                obs=[np.nan for k in range(0,len(covariates)+3)]
+                obs=[t]+[np.nan for k in range(0,len(covariates)+3)]
                 
             # date recorded, record the observations
             else:
                 # acquire data in this month
                 ts_now=self.ts[all_dates==t]
                 # observation at this time point
-                obs=[]
+                obs=[t,]
                 # select the feature
                 for feature in covariates:
                     # feature at t timepoint 
@@ -245,6 +245,7 @@ class patient:
                 obs.append(status)
             data.append(obs)
         covariates=np.concatenate((covariates,['Sex','Age','Stage']))
+        covariates=np.concatenate((['TimePoint'],covariates))
         data=pd.DataFrame(data,columns=covariates)
         self.data=data
         
