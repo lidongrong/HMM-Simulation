@@ -25,6 +25,10 @@ from pyro.infer import config_enumerate
 import pyro.poutine as poutine
 from torch._C import NoneType
 
+# ignore warnings
+import warnings
+warnings.filterwarnings("ignore")
+
 
 # NECESSARY SETTINGS
 smoke_test = ('CI' in os.environ)
@@ -35,15 +39,17 @@ pyro.set_rng_seed(1)
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
 # Set matplotlib settings
-%matplotlib inline
+#%matplotlib inline
 plt.style.use('default')
 
 
 
 # MODEL
 #@title
+from torch._C import NoneType
+#@title
 @config_enumerate
-def hmm_model(sequences,lengths,args):
+def hmm_model(sequences,lengths,args,batch_size=16):
   assert not torch._C._get_tracing_state()
 
   # num_sequences : total number of sequences
@@ -97,7 +103,8 @@ def hmm_model(sequences,lengths,args):
   #define the emission process within the markov chain
   tones_plate = pyro.plate("tones", args.hidden_dim, dim=-1)
   x_plate=pyro.plate('trunc_mu',args.hidden_dim)
-  for i in pyro.plate("sequences",len(sequences)):
+  assert batch_size==args.batch_size
+  for i in pyro.plate("sequences",len(sequences),batch_size):
     length=lengths[i]
     sequence=sequences[i,:length]
     # sample the first hidden state from initial
@@ -117,7 +124,7 @@ def hmm_model(sequences,lengths,args):
       # emission process
       ob1=sequence[t][:-args.hidden_dim]
       is_observed=~ob1.isnan()
-      is_observed=torch.tensor(is_observed)
+      is_observed=torch.tensor(is_observed).clone().detach()
       # handle missing
       valid_data=ob1.clone()
       valid_data[ob1.isnan()]=0
@@ -176,18 +183,13 @@ def hmm_model(sequences,lengths,args):
           obs=x
       )
       
-      
-                
-             
-                
-      
       # observational process
       # handle missingness
       weight=torch.exp(-torch.matmul(beta,valid_data))
       weight=weight/sum(weight)
       ob2=sequence[t][-args.hidden_dim:]
       is_observed=~ob2.isnan()
-      is_observed=torch.tensor(is_observed)
+      is_observed=torch.tensor(is_observed).clone().detach()
       valid_data=ob2.clone()
       valid_data[ob2.isnan()]=0
       #print('z squeeze: ',z.squeeze(-1))
@@ -234,6 +236,15 @@ def hmm_model(sequences,lengths,args):
             obs=valid_data
               )
               '''
+              
+        
+            
+      
+      
+      
+        
+
+
 
 # DATA PREPROCESSOR
 
@@ -325,9 +336,11 @@ def data_impute(sequences,hidden_dim=7):
   return sequences
 
 # DATA PREPROCES
-sequences=data_reader(data_path,100)
+sequences=data_reader(data_path,3000)
+
 lengths=data_to_length(sequences)
 sequences=data_to_tensor(sequences,stages)
+
 
 # ADD PARSER
 # set hidden dim by default
@@ -336,10 +349,12 @@ parser=argparse.ArgumentParser(
 )
 # specify hidden dimension
 parser.add_argument("-hd","--hidden-dim",default=7,type=int)
+parser.add_argument("-b","--batch-size",default=8,type=int)
 args=parser.parse_args(args=[])
 
 
 # RUN THE CODE VIA SVI
+
 ## auto guider
 #model_guide=pyro.infer.autoguide.AutoMultivariateNormal(hmm_model)
 model_guide=pyro.infer.autoguide.AutoDelta(poutine.block(hmm_model,expose=['transition','initial','mu','beta']))
@@ -349,17 +364,24 @@ model_guide=pyro.infer.autoguide.AutoDelta(poutine.block(hmm_model,expose=['tran
 pyro.clear_param_store()
 pyro.set_rng_seed(1)
 #optimizer
-adam=pyro.optim.Adam({"lr":0.02})
+adam=pyro.optim.Adam({"lr":0.05})
 elbo=pyro.infer.TraceEnum_ELBO()
 guide=model_guide
 svi=pyro.infer.SVI(hmm_model,model_guide,adam,elbo)
 
 # training
 losses=[]
-for step in range(100 if not smoke_test else 2):  # Consider running for more steps.
-    loss = svi.step(sequences,lengths,args)
+for step in range(8000 if not smoke_test else 2):  # Consider running for more steps.
+    loss = svi.step(sequences,lengths,args,batch_size=args.batch_size)
     losses.append(loss)
     if step % 1 == 0:
       print('iter:',step)
       logging.info("Elbo loss: {}".format(loss))
 
+'''
+our_model=hmm_model
+kernel = pyro.infer.mcmc.NUTS(our_model, jit_compile=True)
+#kernel=pyro.infer.mcmc.NUTS(our_model)
+sampler=pyro.infer.mcmc.MCMC(kernel,num_samples=300,warmup_steps=100,num_chains=1,disable_progbar=False)
+posterior=sampler.run(sequences,lengths,args)
+'''
