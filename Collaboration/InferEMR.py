@@ -334,13 +334,29 @@ def data_impute(sequences,hidden_dim=7):
       sequences[i][j][-site]=1
   
   return sequences
+  
+# load data function
+def data_loader(data_path,sample_size):
+  '''
+  load data into the environment
+  turn data into tensor that can be manipulated by pyro
+  return sequences in tensor type and their lengths
+  '''
+  sequences=data_reader(data_path,sample_size)
+  lengths=data_to_length(sequences)
+  sequences=data_to_tensor(sequences,stages)
+  return sequences,lengths
 
 # DATA PREPROCES
+'''
 sequences=data_reader(data_path,3000)
 
 lengths=data_to_length(sequences)
 sequences=data_to_tensor(sequences,stages)
+'''
 
+sample_size=3381
+sequences,lengths=data_loader(data_path,sample_size)
 
 # ADD PARSER
 # set hidden dim by default
@@ -348,8 +364,8 @@ parser=argparse.ArgumentParser(
     description="Argument for HMM Training"
 )
 # specify hidden dimension
-parser.add_argument("-hd","--hidden-dim",default=7,type=int)
-parser.add_argument("-b","--batch-size",default=8,type=int)
+parser.add_argument("-hd","--hidden-dim",default=len(stages),type=int)
+parser.add_argument("-b","--batch-size",default=16,type=int)
 args=parser.parse_args(args=[])
 
 
@@ -371,7 +387,7 @@ svi=pyro.infer.SVI(hmm_model,model_guide,adam,elbo)
 
 # training
 losses=[]
-for step in range(8000 if not smoke_test else 2):  # Consider running for more steps.
+for step in range(16000 if not smoke_test else 2):  # Consider running for more steps.
     loss = svi.step(sequences,lengths,args,batch_size=args.batch_size)
     losses.append(loss)
     if step % 1 == 0:
@@ -385,3 +401,18 @@ kernel = pyro.infer.mcmc.NUTS(our_model, jit_compile=True)
 sampler=pyro.infer.mcmc.MCMC(kernel,num_samples=300,warmup_steps=100,num_chains=1,disable_progbar=False)
 posterior=sampler.run(sequences,lengths,args)
 '''
+
+# store estimate results
+estimate={}
+for name, value in pyro.get_param_store().items():
+    print(name, pyro.param(name).data.cpu().numpy())
+    estimate[name]=pyro.param(name).data.cpu().numpy()
+
+# save results
+estimate_key=list(estimate.keys())
+
+for i in range(len(estimate_key)):
+    x=estimate[estimate_key[i]]
+    np.save(f'{estimate_key[i]}.npy',x)
+
+
