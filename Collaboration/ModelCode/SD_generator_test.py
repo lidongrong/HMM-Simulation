@@ -30,7 +30,9 @@ transition=np.array([[0.6,0.1,0.1,0.1,0.05,0.05,0],
                      [0,0,0,0,0.1,0.7,0.2],
                      [0,0,0,0,0,0,1]])
 # beta[z]=0.3*z for each coordinator
-beta=np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial)) 
+beta=[np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial)) 
+      for i in range(len(initial))]
+beta=np.array(beta)
 # mu[z]=-3+z for each coordinator
 mu=np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial))
 # sigma set to be identity
@@ -40,15 +42,15 @@ params=[initial,transition,beta,mu,sigma]
 params_name=['initial','transition','beta','mu','sigma']
 
 # total sequence number
-num=20000
+num=40000
 # missing rate
-rate=[0.8,0.9,0.95,0.97]
+rate=[0.5,0.6,0.8,0.9,0.95,0.97]
 # path
-path='SynData'
+path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData'
 
 
 if __name__=='__main__':
-    synthesizer=Synthesize(covariates,initial,transition,beta,mu,sigma,num)
+    synthesizer=Synthesize(covariates,initial,transition,beta,mu,sigma,num,lbd=20)
     full=synthesizer.generate_sequences()
     #save params
     for i in range(len(params)):

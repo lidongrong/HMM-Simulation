@@ -56,6 +56,7 @@ class Synthesize:
         # hidden state
         for i in range(self.num):
             length=np.random.poisson(self.lbd,1)[0]
+            length=max(10,length)
             assert length>0
             # hidden state
             z=[]
@@ -85,7 +86,7 @@ class Synthesize:
                 # beta_z
                 tmp_beta=self.beta[state]
                 # logistic regression probability
-                prob=np.exp(-np.dot(self.beta,new_x))
+                prob=np.exp(-np.dot(tmp_beta,new_x))
                 prob=prob/sum(prob)
                 y_state=np.random.choice(latent_size,1,True,p=prob)[0]
                 new_y=[0]*latent_size
