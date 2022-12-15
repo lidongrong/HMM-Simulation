@@ -169,12 +169,13 @@ class Synthesize:
     
 
 # convert data to matrix
-def data_to_array(sequences,covariates,covariate_types):
+def data_to_array(sequences,covariates,covariate_types,standardize=False):
     '''
     convert sequences to nd arrays
     sequences must be raw pandas frames read from pre-specified paths
     covariates is a list of strings indicating the name of covariates
     covariate_types: indicate if each covariate is numeric or dummy
+    standardize: if standardize data
     '''
     lengths=data_to_length(sequences)
     max_length=np.int32(max(lengths))
@@ -183,11 +184,13 @@ def data_to_array(sequences,covariates,covariate_types):
         features=sequences[i].columns
         # standardize data
         sequences[i]=sequences[i].drop(['Unnamed: 0'],axis=1)
-        for k in range(0,len(covariates)):
-            if covariate_types[k]=='numeric':
-                seq=sequences[i][sequences[i].columns[k]]
-                seq=(seq-min(seq))/(max(seq)-min(seq))
-                sequences[i][sequences[i].columns[k]]=seq
+        if standardize:
+            for k in range(0,len(covariates)):
+                if covariate_types[k]=='numeric':
+                    seq=sequences[i][sequences[i].columns[k]]
+                    seq=(seq-min(seq))/(max(seq)-min(seq))
+                    sequences[i][sequences[i].columns[k]]=seq
+        
         sequences[i]=sequences[i].values
         if sequences[i].shape[0]<max_length:
             features=sequences[i].shape[1]

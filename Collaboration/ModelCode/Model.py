@@ -13,6 +13,7 @@ import time
 from tqdm import tqdm
 import itertools
 import multiprocessing as mp
+import scipy.special as ss
 
 class HMM_Model:
     def __init__(self,data,lengths,features,feature_types):
@@ -31,6 +32,11 @@ class HMM_Model:
         self.feature_dim=len(features)
         self.hidden_dim=data.shape[2]-self.feature_dim
         self.data_dim=data.shape[2]
+        self.x,self.y=self.split()
+        
+        # missing value indicator, 1 for observed, 0 for missing
+        self.x_mask=~np.isnan(self.x)
+        self.y_mask=~np.isnan(self.y)
     
     def split(self):
         '''
@@ -66,7 +72,7 @@ class Random_Gibbs(Optimizer):
         else:
             # otherwise, initialize parameters by default
             self.pi=np.random.dirichlet([1]*model.hidden_dim,1)[0]
-            self.A=np.random.dirichlet([1]*model.hidden_dim,model.hidden_dim)
+            self.transition=np.random.dirichlet([1]*model.hidden_dim,model.hidden_dim)
             self.mu=np.random.multivariate_normal([0]*model.feature_dim, np.eye(model.feature_dim),model.hidden_dim)
             # invwishart with df model.feature_dim and V=I
             self.sigma=stats.invwishart.rvs(model.feature_dim,np.eye(model.feature_dim),model.hidden_dim)
@@ -101,7 +107,7 @@ class Random_Gibbs(Optimizer):
             if i>0:
                 prev=np.where(z[i-1]==1)[0][0]
                 curr=np.where(z[i]==1)[0][0]
-                log_likelihood+=np.log(self.A[prev,curr])
+                log_likelihood+=np.log(self.transition[prev,curr])
             
             # observation probability
             latent=np.where(z[i]==1)[0][0]
@@ -160,17 +166,170 @@ class Random_Gibbs(Optimizer):
             
         
     
-    def sample_z(self,x,y,z):
+    def sample_z(self,x,y,z,lengths,x_masks,y_masks,p=None):
         '''
         sample latent z given x,y and other paramters
         '''
-        pass
+        if p is None:
+            new_z=list(map(self.sample_zt,x,y,z,lengths,x_masks,y_masks))
+            new_z=np.array(new_z)
+            return new_z
     
-    def sample_x(self,x,y,z):
+    def sample_zt(self,x,y,z,length,x_mask,y_mask):
+        '''
+        sample single z use forward backward sampling
+        x_mask, y_mask: indicators of missing, 1 for observed 0 for missing
+        # test code
+        x=m.x[0]
+        y=m.y[0]
+        z=m.y[0]
+        length=optimizer.model.lengths[0]
+        x_mask=optimizer.model.x_mask[0]
+        y_mask=optimizer.model.y_mask[0]
+        optimizer.sample_zt(x,y,z,length,x_mask,y_mask)
+        '''
+        log_trans=np.log(self.transition)
+        # step 1: forward computation
+        alpha=[]
+        log_alpha=[]
+        # if observed
+        x_logpdf=np.array([stats.multivariate_normal.logpdf(x[0],self.mu[i],self.sigma[i])
+                        for i in range(self.model.hidden_dim)])
+        if np.any(y_mask[0]):
+            y_obs=np.where(y[0]==1)[0][0]
+            
+            y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])
+                               for i in range(self.model.hidden_dim)])
+            y_logpdf=y_logpdf-ss.logsumexp(y_logpdf)
+            
+            log_alpha.append(np.log(self.pi)+y_logpdf+x_logpdf)
+        # if y1 missing
+        else:
+            log_alpha.append(np.log(self.pi)+x_logpdf)
+        # iteration from 0 to T-1
+        for t in range(1,length):
+            
+            # iteration from last step
+            last=log_alpha[len(log_alpha)-1]
+            x_logpdf=np.array([stats.multivariate_normal.logpdf(x[t],self.mu[i],self.sigma[i])
+                            for i in range(self.model.hidden_dim)])
+            
+            
+            left=[last+log_trans[:,i] for i in range(self.model.hidden_dim)]
+            left=ss.logsumexp(last,axis=0)
+            # y observed
+            if np.any(y_mask[t]):
+                y_obs=np.where(y[t]==1)[0][0]
+                
+                y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])
+                                   for i in range(self.model.hidden_dim)])
+                y_logpdf=y_logpdf-ss.logsumexp(y_logpdf)
+                log_alpha.append(left+x_logpdf+y_logpdf)
+            # y missing
+            else:
+                log_alpha.append(left+x_logpdf)
+        
+        # backward sampling: sample from z_T to z_1
+        log_alpha=np.array(log_alpha)
+        reverse_z=[]
+        # first sample z_T
+        assert len(log_alpha)==length
+        prob=log_alpha[length-1]
+        prob=np.exp(prob-ss.logsumexp(prob))
+        # position
+        latent=np.random.choice(np.arange(self.model.hidden_dim),
+                                1,True,p=prob)[0]
+        z=np.zeros(self.model.hidden_dim)
+        z[latent]=1
+        reverse_z.append(z)
+        for t in range(length-2,-1,-1):
+            last_z=reverse_z[len(reverse_z)-1]
+            last_latent=np.where(last_z==1)[0][0]
+            left=log_trans[:,last_latent]
+            prob=left+log_alpha[t]
+            prob=np.exp(prob-ss.logsumexp(prob))
+            
+            #prob=prob/sum(prob)
+            latent=np.random.choice(np.arange(self.model.hidden_dim),
+                                    1,True,p=prob)[0]
+            z=np.zeros(self.model.hidden_dim)
+            z[latent]=1
+            reverse_z.append(z)
+        reverse_z.reverse()
+        new_z=np.array(reverse_z)
+        return new_z
+            
+        
+    
+    def sample_x(self,x,y,z,lengths,masks,p=None):
         '''
         sample missing x for imputation
+        length: the lengths of each sequences
+        mask: masks indicating missing values (1 for observed)
+        p: mp core
         '''
-        pass
+        if p is None:
+            new_x=list(map(self.sample_xt,x,y,z,lengths,masks))
+            new_x=np.array(new_x)
+            return new_x
+    
+    def sample_xt(self,x,y,z,length,mask):
+        '''
+        sample a single x out, not exposed to the user
+        used in sample_x
+        length: length of this patient
+        mask: indicating missing values. 1 for observed, 0 for missing
+        
+        '''
+        new_x=x.copy()
+        for t in range(length):
+            xt=x[t]
+            mskt=mask[t]
+            # first handle two edge case: all observed or all missing
+            # case 1: all missing
+            if sum(mskt)==0:
+                latent=np.where(y[t]==1)[0][0]
+                new_x[t]=np.random.multivariate_normal(self.mu[latent], self.sigma[latent])
+            # case 2: all observed, then nothing happens
+            elif sum(mskt)==len(mskt):
+                pass
+            # case 3: partially observed
+            else:
+                latent=np.where(y[0][0]==1)[0][0]
+                # observed and missing index
+                obs_index=np.argwhere(mskt==True)
+                mis_index=np.argwhere(mskt==False)
+                obs_index=obs_index.squeeze(-1)
+                mis_index=mis_index.squeeze(-1)
+                
+                # permute xt, mu and sigma to prepare for conditional generation
+                perm=list(mis_index)+list(obs_index)
+                #x_tmp=xt[perm]
+                mu_tmp=self.mu[latent].copy()
+                sigma_tmp=self.sigma[latent].copy()
+                mu_tmp=mu_tmp[perm]
+                sigma_tmp=sigma_tmp[perm]
+                
+                # sample from conditional
+                mu1=mu_tmp[0:len(mis_index)]
+                mu2=mu_tmp[len(mis_index)+1:]
+                sigma11=sigma_tmp[0:len(mis_index),0:len(mis_index)]
+                sigma12=sigma_tmp[0:len(mis_index),len(mis_index)+1:]
+                sigma21=sigma_tmp[len(mis_index)+1:,0:len(mis_index)]
+                sigma22=sigma_tmp[len(mis_index)+1:,len(mis_index)+1:]
+                cond_mean=mu1+np.dot(sigma12,np.dot(np.linalg.inv(sigma22),x[obs_index]-mu2))
+                cond_covariance=sigma11-np.dot(sigma12,
+                                               np.dot(np.linalg.inv(sigma22),
+                                                   sigma21))
+                cond=np.random.multivariate_normal(cond_mean,cond_covariance)
+                new_x[t][mis_index]=cond
+        return new_x
+                
+                
+            
+        
+            
+            
     
     def sample_pi(self,x,y,z):
         '''
@@ -282,7 +441,7 @@ class Random_Gibbs(Optimizer):
         self.sigma=new_sigma
         return new_sigma
     
-    def sample_beta(self):
+    def sample_beta(self,x,y,z):
         '''
         sample beta, the coefficients in regression
         return updated beta

@@ -12,7 +12,7 @@ import pandas as pd
 import multiprocessing as mp
 import time
 
-path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.9\FullData'
+path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\FullData'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
        'GGT', 'HBVDNA', 'HBeAg', 'HBsAg', 'HCVRNA', 'HDL', 'Hb', 'HbA1c',
        'INR', 'LDL', 'PLT', 'PT', 'TBili', 'TC', 'TG', 'WCC', 'ACEI',
@@ -30,8 +30,4 @@ if __name__ == '__main__':
     x,y=m.split()
     optimizer=Model.Random_Gibbs(m)
     
-    p=mp.Pool(16)
-    start=time.time()
-    l=optimizer.joint_pdf(x,y,y,None)
-    end=time.time()
-    print('time:',end-start)
+    
