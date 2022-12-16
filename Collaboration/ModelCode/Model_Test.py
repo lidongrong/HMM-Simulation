@@ -12,7 +12,7 @@ import pandas as pd
 import multiprocessing as mp
 import time
 
-path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\FullData'
+path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\PartialData'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
        'GGT', 'HBVDNA', 'HBeAg', 'HBsAg', 'HCVRNA', 'HDL', 'Hb', 'HbA1c',
        'INR', 'LDL', 'PLT', 'PT', 'TBili', 'TC', 'TG', 'WCC', 'ACEI',
@@ -22,7 +22,7 @@ covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', '
        'Tenofovir Disoproxil Fumarate', 'Thiazide']) 
 types=np.array(['numeric','dummy'])
 covariate_types=np.array(['numeric']*len(covariates))
-sample_size=50
+sample_size=1000
 data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)  
 
 if __name__ == '__main__':
@@ -30,4 +30,5 @@ if __name__ == '__main__':
     x,y=m.split()
     optimizer=Model.Random_Gibbs(m)
     
+    param=optimizer.run(100,4,True,0.5,True,10)
     

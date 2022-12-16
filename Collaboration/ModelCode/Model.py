@@ -14,6 +14,7 @@ from tqdm import tqdm
 import itertools
 import multiprocessing as mp
 import scipy.special as ss
+import logging
 
 class HMM_Model:
     def __init__(self,data,lengths,features,feature_types):
@@ -35,8 +36,8 @@ class HMM_Model:
         self.x,self.y=self.split()
         
         # missing value indicator, 1 for observed, 0 for missing
-        self.x_mask=~np.isnan(self.x)
-        self.y_mask=~np.isnan(self.y)
+        self.x_masks=~np.isnan(self.x)
+        self.y_masks=~np.isnan(self.y)
     
     def split(self):
         '''
@@ -62,6 +63,8 @@ class Random_Gibbs(Optimizer):
         '''
         # the hmm model
         self.model=model
+        # posterior sample
+        self.param=None
         # if initial points specified
         if isinstance(initial,dict):
             self.pi=initial['pi']
@@ -166,36 +169,43 @@ class Random_Gibbs(Optimizer):
             
         
     
-    def sample_z(self,x,y,z,lengths,x_masks,y_masks,p=None):
+    def sample_z(self,x,y,z,lengths=None, x_masks=None, y_masks=None,p=None):
         '''
         sample latent z given x,y and other paramters
+        # test code
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        z=optimizer.sample_z(x,y,z)
         '''
+        if lengths is None:
+            lengths=self.model.lengths
+        if x_masks is None:
+            x_masks=self.model.x_masks
+        if y_masks is None:
+            y_masks=self.model.y_masks
         if p is None:
-            new_z=list(map(self.sample_zt,x,y,z,lengths,x_masks,y_masks))
+            new_z=list(map(self.sample_zt,x,y,z,lengths,x_masks,
+                           y_masks))
             new_z=np.array(new_z)
             return new_z
     
-    def sample_zt(self,x,y,z,length,x_mask,y_mask):
+    def sample_zt(self,x,y,z,length,x_masks,y_masks):
         '''
         sample single z use forward backward sampling
         x_mask, y_mask: indicators of missing, 1 for observed 0 for missing
         # test code
-        x=m.x[0]
-        y=m.y[0]
-        z=m.y[0]
-        length=optimizer.model.lengths[0]
-        x_mask=optimizer.model.x_mask[0]
-        y_mask=optimizer.model.y_mask[0]
-        optimizer.sample_zt(x,y,z,length,x_mask,y_mask)
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        zt=optimizer.sample_zt(x[0],y[0],z[0],optimizer.model.lengths[0],
+                            optimizer.model.x_masks[0],optimizer.model.y_masks[0])
         '''
         log_trans=np.log(self.transition)
         # step 1: forward computation
-        alpha=[]
         log_alpha=[]
         # if observed
         x_logpdf=np.array([stats.multivariate_normal.logpdf(x[0],self.mu[i],self.sigma[i])
                         for i in range(self.model.hidden_dim)])
-        if np.any(y_mask[0]):
+        if np.any(y_masks[0]):
             y_obs=np.where(y[0]==1)[0][0]
             
             y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])
@@ -218,7 +228,7 @@ class Random_Gibbs(Optimizer):
             left=[last+log_trans[:,i] for i in range(self.model.hidden_dim)]
             left=ss.logsumexp(last,axis=0)
             # y observed
-            if np.any(y_mask[t]):
+            if np.any(y_masks[t]):
                 y_obs=np.where(y[t]==1)[0][0]
                 
                 y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])
@@ -239,9 +249,9 @@ class Random_Gibbs(Optimizer):
         # position
         latent=np.random.choice(np.arange(self.model.hidden_dim),
                                 1,True,p=prob)[0]
-        z=np.zeros(self.model.hidden_dim)
-        z[latent]=1
-        reverse_z.append(z)
+        curr_z=np.zeros(self.model.hidden_dim)
+        curr_z[latent]=1
+        reverse_z.append(curr_z)
         for t in range(length-2,-1,-1):
             last_z=reverse_z[len(reverse_z)-1]
             last_latent=np.where(last_z==1)[0][0]
@@ -252,50 +262,63 @@ class Random_Gibbs(Optimizer):
             #prob=prob/sum(prob)
             latent=np.random.choice(np.arange(self.model.hidden_dim),
                                     1,True,p=prob)[0]
-            z=np.zeros(self.model.hidden_dim)
-            z[latent]=1
-            reverse_z.append(z)
+            curr_z=np.zeros(self.model.hidden_dim)
+            curr_z[latent]=1
+            reverse_z.append(curr_z)
         reverse_z.reverse()
-        new_z=np.array(reverse_z)
+        reverse_z=np.array(reverse_z)
+        rest=z[length:]
+        
+        new_z=np.concatenate((reverse_z,rest),axis=0)
         return new_z
             
         
     
-    def sample_x(self,x,y,z,lengths,masks,p=None):
+    def sample_x(self,x,y,z,lengths=None, x_masks=None,p=None):
         '''
         sample missing x for imputation
         length: the lengths of each sequences
         mask: masks indicating missing values (1 for observed)
         p: mp core
+        # test code:
+        z=optimizer.z_initializer(optimizer.model.x,optimizer.model.y)
+        x=optimizer.sample_x(optimizer.model.x,optimizer.model.y,z)
         '''
+        if lengths is None:
+            lengths=self.model.lengths
+        if x_masks is None:
+            x_masks=self.model.x_masks
+            
         if p is None:
-            new_x=list(map(self.sample_xt,x,y,z,lengths,masks))
+            new_x=list(map(self.sample_xt,x,y,z,lengths,x_masks))
             new_x=np.array(new_x)
             return new_x
     
-    def sample_xt(self,x,y,z,length,mask):
+    def sample_xt(self,x,y,z,length,x_masks):
         '''
         sample a single x out, not exposed to the user
         used in sample_x
         length: length of this patient
-        mask: indicating missing values. 1 for observed, 0 for missing
-        
+        mask: indicating missing values in x. 1 for observed, 0 for missing
+        # test code:
+        z=optimizer.z_initializer(optimizer.model.x,optimizer.model.y)
+        x=optimizer.sample_xt(x[0],y[0],z[0],optimizer.model.lengths[0],optimizer.model.x_masks[0])
         '''
         new_x=x.copy()
         for t in range(length):
             xt=x[t]
-            mskt=mask[t]
+            mskt=x_masks[t]
             # first handle two edge case: all observed or all missing
             # case 1: all missing
             if sum(mskt)==0:
-                latent=np.where(y[t]==1)[0][0]
+                latent=np.where(z[t]==1)[0][0]
                 new_x[t]=np.random.multivariate_normal(self.mu[latent], self.sigma[latent])
             # case 2: all observed, then nothing happens
             elif sum(mskt)==len(mskt):
                 pass
             # case 3: partially observed
             else:
-                latent=np.where(y[0][0]==1)[0][0]
+                latent=np.where(z[t]==1)[0][0]
                 # observed and missing index
                 obs_index=np.argwhere(mskt==True)
                 mis_index=np.argwhere(mskt==False)
@@ -308,16 +331,18 @@ class Random_Gibbs(Optimizer):
                 mu_tmp=self.mu[latent].copy()
                 sigma_tmp=self.sigma[latent].copy()
                 mu_tmp=mu_tmp[perm]
-                sigma_tmp=sigma_tmp[perm]
+                sigma_tmp=sigma_tmp[perm,:]
+                sigma_tmp=sigma_tmp[:,perm]
                 
                 # sample from conditional
+                # mu1 for mean of missing, mu2 for mean of obs index
                 mu1=mu_tmp[0:len(mis_index)]
-                mu2=mu_tmp[len(mis_index)+1:]
+                mu2=mu_tmp[len(mis_index):]
                 sigma11=sigma_tmp[0:len(mis_index),0:len(mis_index)]
-                sigma12=sigma_tmp[0:len(mis_index),len(mis_index)+1:]
-                sigma21=sigma_tmp[len(mis_index)+1:,0:len(mis_index)]
-                sigma22=sigma_tmp[len(mis_index)+1:,len(mis_index)+1:]
-                cond_mean=mu1+np.dot(sigma12,np.dot(np.linalg.inv(sigma22),x[obs_index]-mu2))
+                sigma12=sigma_tmp[0:len(mis_index),len(mis_index):]
+                sigma21=sigma_tmp[len(mis_index):,0:len(mis_index)]
+                sigma22=sigma_tmp[len(mis_index):,len(mis_index):]
+                cond_mean=mu1+np.dot(sigma12,np.dot(np.linalg.inv(sigma22),xt[obs_index]-mu2))
                 cond_covariance=sigma11-np.dot(sigma12,
                                                np.dot(np.linalg.inv(sigma22),
                                                    sigma21))
@@ -336,10 +361,12 @@ class Random_Gibbs(Optimizer):
         sample initial distribution pi given other parameters
         return generated pi
         # test code
-        optimizer.sample_pi(x,y,y)
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        optimizer.sample_pi(x,y,z)
         '''
         # count start conditions
-        start=y[:,0,:]
+        start=z[:,0,:]
         start=sum(start)
         new_pi=np.random.dirichlet(1+start)
         
@@ -352,7 +379,9 @@ class Random_Gibbs(Optimizer):
         sample transition matrix
         return sampled transition
         # test code
-        optimizer.sample_transition(x,y,y)
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        optimizer.sample_transition(x,y,z)
         '''
         
         # decode the observations into int
@@ -387,7 +416,9 @@ class Random_Gibbs(Optimizer):
         '''
         sample emission probability with mean mu
         # test code
-        optimizer.sample_mu(x,y,y)
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        optimizer.sample_mu(x,y,z)
         '''
         new_mu=[]
         for i in range(self.model.hidden_dim):
@@ -418,7 +449,9 @@ class Random_Gibbs(Optimizer):
         sample sigma, the covariance of emission distribution
         return sampled sigma
         #test code
-        sig=optimizer.sample_sigma(x,y,y)
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        sig=optimizer.sample_sigma(x,y,z)
         '''
         new_sigma=[]
         for i in range(self.model.hidden_dim):
@@ -441,25 +474,178 @@ class Random_Gibbs(Optimizer):
         self.sigma=new_sigma
         return new_sigma
     
-    def sample_beta(self,x,y,z):
+    # sample beta
+    def sample_beta(self,x,y,z,SGLD=True,SGLD_step=None,SGLD_batch=None):
         '''
         sample beta, the coefficients in regression
         return updated beta
+        x,y,z: full data
+        SGLD: if True, use Unadjusted SGLD
+        SGLD_step: current iteration
+        SGLD_batch: batch size
+        # test code
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        beta=optimizer.sample_beta(x,y,z,True,1,10)
         '''
-        pass
+        if SGLD:
+            k=SGLD_step
+            n=SGLD_batch
+            N=self.model.data.shape[0]
+            # index of subsamples
+            sub_index=np.random.choice(np.arange(N),n,replace=False)
+            x,y,z=x[sub_index],y[sub_index],z[sub_index]
+            for i in range(self.model.hidden_dim):
+                for j in range(self.model.hidden_dim):
+                    beta=self.beta[i][j]
+                    maskz=z[:,:,i]
+                    maskz=(maskz==1)
+                    masky=y[:,:,j]
+                    masky=(masky==1)
+                    mask=maskz*masky
+                    # find x
+                    xzy=x[mask]
+                    new_beta=self.SGLD_beta(xzy,y,z,n,k,beta)
+                    self.beta[i][j]=new_beta
+        return self.beta
+                    
+            
+    
+    # perform SGLD by evaluating beta on x,y and z
+    def SGLD_beta(self,x,y,z,n,k,beta):
+        '''
+        perform SGLD step
+        step size h_k is adjusted to optimal as k^{-1/3}
+        x are selected entries
+        n: mini batch size
+        The updating rule is:
+        beta_{zy}=beta_{zy}-hk/2 beta_{zy}-N/n \sum_t x_t +N(0,hk * I)
+        k: iteration step
+        '''
+        N=self.model.data.shape[0]
+        hk=k**(-1/3)
+        noise=np.random.multivariate_normal(np.zeros(self.model.feature_dim),
+                                            hk*np.eye(self.model.feature_dim))
+        beta=beta-(hk/2)*beta-(N/n)*np.sum(x,axis=0)+noise
+        return beta
+    
+    def z_initializer(self,x,y):
+        '''
+        initialize latent variables x and z
+        input x is partially observed x
+        # test code
+        z=optimizer.z_initializer(optimizer.model.x,optimizer.model.y)
+        '''
+        z=y.copy()
+        for i in range(z.shape[0]):
+            for j in range(self.model.lengths[i]):
+                # if missing
+                if not sum(self.model.y_masks[i][j]):
+                    latent=np.random.randint(0,self.model.hidden_dim,1)[0]
+                    plug=np.zeros(self.model.hidden_dim)
+                    plug[latent]=1
+                    z[i][j]=plug
+        return z
+        
+    def x_initializer(self,x,y,z):
+        '''
+        initialize x
+        # test code
+        z=optimizer.z_initializer(optimizer.model.x,optimizer.model.y)
+        x=optimizer.x_initializer(optimizer.model.x,optimizer.model.y,z)
+        '''
+        new_x=self.sample_x(x,y,z)
+        return new_x
+    
+    def latent_initializer(self,x,y):
+        '''
+        initialize missing x by imputing
+        # test code
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        '''
+        z=self.z_initializer(x,y)
+        x=self.x_initializer(x,y,z)
+        return x,z
+                    
     
     
-    
-    def run(self,n,log_step=None,prog_bar=True):
+    def run(self,n,log_step=None,prog_bar=True,prob=0.5,SGLD=True,batch=16,initial_x=None,initial_z=None):
         '''
         collect samples from n iterations
         n: total number of iterations
         log_step: step for printing results for monitoring. if None, not report
         prog_bar: if display progress bar
+        prob: probability for sampling parameters (because we use random scan)
+        SGLD: if use SGLD
+        batch: batch size in SGLD and random scan gibbs
+        initial_x,initial_z: initial values of x and z
+        # test code
+        param=optimizer.run(20,4,True,0.5,True,10)
         '''
-        for i in tqdm(range(n)):
-            if i%log_step==0:
-                print(i)
-                time.sleep(0.1)
+        # initialize latent variables if don't pass into initial value
+        if initial_x is None:
+            x,y=self.model.x,self.model.y
+            x,z=self.latent_initializer(x,y)
+        
+        # store samples
+        sample_param={}
+        sample_param['beta']=[]
+        sample_param['mu']=[]
+        sample_param['sigma']=[]
+        sample_param['pi']=[]
+        sample_param['transition']=[]
+        for s in tqdm(range(n)):
+            if s%log_step==0:
+                pass
+                #print('iteration: ',s)
+                
+            # decide sample latent var or sample theta
+            flip=np.random.choice([0,1],1,replace=True,p=[1-prob,prob])[0]
+            
+            # sample parameter
+            if flip==1:
+                new_beta=self.sample_beta(x,y,z,True,s+1,batch)
+                new_mu=self.sample_mu(x,y,z)
+                new_transition=self.sample_transition(x,y,z)
+                new_pi=self.sample_pi(x,y,z)
+                new_sigma=self.sample_sigma(x,y,z)
+                sample_param['beta'].append(self.beta)
+                sample_param['mu'].append(self.mu)
+                sample_param['sigma'].append(self.sigma)
+                sample_param['pi'].append(self.pi)
+                sample_param['transition'].append(self.transition)
+                self.param=sample_param
+            # sample latent variable
+            # each time only update a small batch to accelerate computation
+            elif flip==0:
+                # total sample size
+                N=self.model.data.shape[0]
+                # number of batches
+                batch_num=N//batch
+                # randomly select a batch to update
+                
+                choose_batch=np.random.choice(np.arange(batch_num),1,True)[0]
+                batch_index=np.arange(choose_batch*batch,min(N,(choose_batch+1)*batch))
+                z_batch=z[batch_index]
+                y_batch=y[batch_index]
+                x_batch=x[batch_index]
+                
+                z_batch=self.sample_z(x_batch,y_batch,z_batch,self.model.lengths[batch_index],
+                                      self.model.x_masks[batch_index],self.model.y_masks[batch_index])
+                x_batch=self.sample_x(x_batch,y_batch,z_batch,self.model.lengths[batch_index],
+                                      self.model.x_masks[batch_index])
+                
+                x[batch_index]=x_batch
+                z[batch_index]=z_batch
+                
+                
+                '''
+                x=self.sample_x(x,y,z)
+                z=self.sample_z(x,y,z)
+                '''
+        
+        return self.param
+            
+                
                 
         
