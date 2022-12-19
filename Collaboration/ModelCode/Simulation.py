@@ -1,19 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Dec 12 17:42:18 2022
+Created on Mon Dec 19 16:03:22 2022
 
 @author: lidon
 """
-import matplotlib.pyplot as plt
+
 import SD_generator as sdg
 import Model as Model
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
 import time
-import os
-import argparse
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\PartialData'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
@@ -25,21 +22,20 @@ covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', '
        'Tenofovir Disoproxil Fumarate', 'Thiazide']) 
 types=np.array(['numeric','dummy'])
 covariate_types=np.array(['numeric']*len(covariates))
-sample_size=10000
-data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)  
+sample_size=5000
 
-if __name__ == '__main__':
+#data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)
+
+rate=[0.5,0.6,0.8,0.9,0.95,0.97]
+
+def main(path,covariates,covariate_types,sample_size,nums,n):
+    '''
+    path: the path where dataset stores
+    covariates: list/array of names of covariates
+    covariate_types: list/array indicating if each covariate is numeric/dummy
+    sample_size: sample size
+    nums: number of simulations to run
+    n: number of iterations in each simulation
+    '''
     
-    m=Model.HMM_Model(data,lengths,covariates,covariate_types)
-    x,y=m.split()
-    
-    parser=argparse.ArgumentParser(description="training paramters")
-    parser.add_argument("-batch","--batch-size",default=40,type=int)
-    parser.add_argument("-lr","--learning-rate",default=0.01,type=float)
-    parser.add_argument("-hk","--hk",default=1,type=float)
-    args=parser.parse_args(args=[])
-    
-    optimizer=Model.Random_Gibbs(model=m,args=args)
-    
-    param=optimizer.run(n=4000,log_step=4,prog_bar=True,prob=0.7,SGLD=True)
-    
+  

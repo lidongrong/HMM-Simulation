@@ -15,6 +15,7 @@ import itertools
 import multiprocessing as mp
 import scipy.special as ss
 import logging
+import torch
 
 class HMM_Model:
     def __init__(self,data,lengths,features,feature_types):
@@ -23,6 +24,7 @@ class HMM_Model:
         lengths: length of each sequence
         feature: string list of features
         feature_types: indicate if each feature is numeric or dummy (01)
+        args: additional arguments(batch size, learning rate)
         '''
         self.data=data
         self.lengths=lengths
@@ -56,13 +58,14 @@ class Random_Gibbs(Optimizer):
     '''
     random scan gibbs sampler
     '''
-    def __init__(self,model,initial=None):
+    def __init__(self,model,args,initial=None):
         '''
         model: a hmm model
         initial: a dictionary recording a set of initial values
         '''
         # the hmm model
         self.model=model
+        self.args=args
         # posterior sample
         self.param=None
         # if initial points specified
@@ -80,11 +83,12 @@ class Random_Gibbs(Optimizer):
             # invwishart with df model.feature_dim and V=I
             self.sigma=stats.invwishart.rvs(model.feature_dim,np.eye(model.feature_dim),model.hidden_dim)
             tmp_beta=[np.random.multivariate_normal(np.zeros(self.model.feature_dim),
-                                                    5*np.eye(self.model.feature_dim),
+                                                    1*np.eye(self.model.feature_dim),
                                                     self.model.hidden_dim) 
                   for i in range(self.model.hidden_dim)]
             tmp_beta=np.array(tmp_beta)
             self.beta=tmp_beta
+            #print(self.beta[0][0])
     
     
     def obs_log_likelihood(self,x,y,z,length):
@@ -489,45 +493,96 @@ class Random_Gibbs(Optimizer):
         beta=optimizer.sample_beta(x,y,z,True,1,10)
         '''
         if SGLD:
-            k=SGLD_step
-            n=SGLD_batch
+            k=self.args.hk
+            n=self.args.batch_size
             N=self.model.data.shape[0]
             # index of subsamples
             sub_index=np.random.choice(np.arange(N),n,replace=False)
             x,y,z=x[sub_index],y[sub_index],z[sub_index]
-            for i in range(self.model.hidden_dim):
-                for j in range(self.model.hidden_dim):
-                    beta=self.beta[i][j]
-                    maskz=z[:,:,i]
-                    maskz=(maskz==1)
-                    masky=y[:,:,j]
-                    masky=(masky==1)
-                    mask=maskz*masky
-                    # find x
-                    xzy=x[mask]
-                    new_beta=self.SGLD_beta(xzy,y,z,n,k,beta)
-                    self.beta[i][j]=new_beta
+            #print(x.shape)
+            new_beta=self.SGLD_beta(x,y,z,self.beta)
+            self.beta=new_beta
         return self.beta
-                    
-            
     
+    def beta_grad(self,x,y,z,beta):
+        '''
+        x,y,z=dataset, should be numpy array
+        beta: the full beta paramter, should be numpy array
+        x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
+        y=optimizer.model.y
+        beta=optimizer.beta
+        g=optimizer.beta_grad(x[0:50],y[0:50],z[0:50],beta)
+        '''
+        f=0
+        beta=beta.astype(x.dtype)
+        x=torch.tensor(x)
+        beta=torch.tensor(beta,requires_grad=True)
+        for i in range(self.model.hidden_dim):
+            for j in range(self.model.hidden_dim):
+                maskz=z[:,:,i]
+                maskz=(maskz==1)
+                masky=y[:,:,j]
+                masky=(masky==1)
+                mask=maskz*masky
+                # find x
+                if mask.size!=0:
+                    x_zy=x[mask]
+                    f=f+self.beta_forward(x_zy,beta[i],j)
+        f.backward()
+        grad=beta.grad
+        return grad.numpy()
+    
+    def beta_forward(self,x,beta,j):
+        '''
+        return log of p(x,y,z|\beta)p(\beta) in torch form
+        test code:
+        beta=np.random.normal(0,1,(7,40))
+        x=np.random.normal(0,1,(50,40))
+        x=torch.tensor(x,requires_grad=True)
+        beta=torch.tensor(beta,requires_grad=True)
+        f=optimizer.beta_forward(x,beta,0)
+        '''
+        #x=torch.tensor(x,requires_grad=True)
+        #beta=torch.tensor(beta,requires_grad=True)
+        batch=self.args.batch_size
+        log_term1=-batch*torch.dot(beta[j],beta[j])/(2*self.model.data.shape[0])
+        
+        #term2=torch.nn.functional.softmax(-torch.matmul(x,beta.T),dim=0)
+        #log_term2=torch.sum(torch.log(term2),axis=0)[j]
+        
+        term2=torch.matmul(-x,beta.T)
+        log_term2=torch.sum(term2[:,j]-torch.logsumexp(term2,dim=1))
+        return log_term1+log_term2
+        
     # perform SGLD by evaluating beta on x,y and z
-    def SGLD_beta(self,x,y,z,n,k,beta):
+    #def SGLD_beta(self,x,y,z,n,k,beta):
+    def SGLD_beta(self,x,y,z,beta):
         '''
         perform SGLD step
         step size h_k is adjusted to optimal as k^{-1/3}
         x are selected entries
+        i, j: index identifying beta[i][j] (the sub-entry to optimize)
         n: mini batch size
-        The updating rule is:
-        beta_{zy}=beta_{zy}-hk/2 beta_{zy}-N/n \sum_t x_t +N(0,hk * I)
         k: iteration step
         '''
         N=self.model.data.shape[0]
-        hk=k**(-1/3)
+        n=self.args.batch_size
+        self.args.hk=self.args.hk+1
+        hk=self.args.learning_rate * (self.args.hk**(-1/3))
+        print('hk:',hk)
+        '''
         noise=np.random.multivariate_normal(np.zeros(self.model.feature_dim),
                                             hk*np.eye(self.model.feature_dim))
-        beta=beta-(hk/2)*beta-(N/n)*np.sum(x,axis=0)+noise
-        return beta
+        '''
+        noise=np.random.normal(0,np.sqrt(hk),size=beta.shape)
+        
+        new_beta=beta.copy()
+        
+        beta_grad=self.beta_grad(x,y,z,new_beta)
+        
+        new_beta=new_beta + (hk/2) * (N/n) * beta_grad + noise
+        
+        return new_beta
     
     def z_initializer(self,x,y):
         '''
@@ -569,7 +624,7 @@ class Random_Gibbs(Optimizer):
                     
     
     
-    def run(self,n,log_step=None,prog_bar=True,prob=0.5,SGLD=True,batch=16,initial_x=None,initial_z=None):
+    def run(self,n,log_step=None,prog_bar=True,prob=0.5,SGLD=True,initial_x=None,initial_z=None):
         '''
         collect samples from n iterations
         n: total number of iterations
@@ -594,6 +649,7 @@ class Random_Gibbs(Optimizer):
         sample_param['sigma']=[]
         sample_param['pi']=[]
         sample_param['transition']=[]
+        batch=self.args.batch_size
         for s in tqdm(range(n)):
             if s%log_step==0:
                 pass
@@ -604,12 +660,13 @@ class Random_Gibbs(Optimizer):
             
             # sample parameter
             if flip==1:
-                new_beta=self.sample_beta(x,y,z,True,s+1,batch)
+                new_beta=self.sample_beta(x,y,z,True,len(sample_param['beta'])+1,batch)
                 new_mu=self.sample_mu(x,y,z)
                 new_transition=self.sample_transition(x,y,z)
                 new_pi=self.sample_pi(x,y,z)
                 new_sigma=self.sample_sigma(x,y,z)
                 sample_param['beta'].append(self.beta)
+                print(self.beta[0][0])
                 sample_param['mu'].append(self.mu)
                 sample_param['sigma'].append(self.sigma)
                 sample_param['pi'].append(self.pi)
