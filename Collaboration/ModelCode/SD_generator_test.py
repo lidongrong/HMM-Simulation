@@ -21,7 +21,9 @@ variates={'HBV': np.array(['HBeAg+ALT<=1ULN', 'HBeAg+ALT>1ULN', 'HBeAg-ALT<=1ULN
 covariates=np.array(list(variates['Lab'])+list(variates['Med']))
 d=len(covariates)
 # parameter specification
-initial=np.array([0.2,0.2,0.2,0.2,0.15,0.05,0])
+# initial[i] propto i^2
+initial=np.array([0.        , 0.01098901, 0.04395604, 0.0989011 , 0.17582418,
+       0.27472527, 0.3956044 ])
 transition=np.array([[0.6,0.1,0.1,0.1,0.05,0.05,0],
                      [0.1,0.6,0.1,0.1,0.05,0.05,0],
                      [0.1,0.1,0.6,0.1,0.05,0.05,0],
@@ -30,8 +32,15 @@ transition=np.array([[0.6,0.1,0.1,0.1,0.05,0.05,0],
                      [0,0,0,0,0.1,0.7,0.2],
                      [0,0,0,0,0,0,1]])
 # beta[z]=0.3*z for each coordinator
+'''
 beta=[np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial)) 
       for i in range(len(initial))]
+'''
+
+beta=np.ones((len(initial),len(initial),d))
+for i in range(beta.shape[0]):
+    for j in range(beta.shape[1]):
+        beta[i][j]=np.log(i+2)*np.log(j+1)*beta[i][j]
 beta=np.array(beta)
 # mu[z]=-3+z for each coordinator
 mu=np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial))
@@ -46,7 +55,7 @@ num=40000
 # missing rate
 rate=[0.5,0.6,0.8,0.9,0.95,0.97]
 # path
-path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData'
+path='D:\Object\PROJECTS\HMM\SynData'
 
 
 if __name__=='__main__':
