@@ -15,7 +15,7 @@ import os
 import argparse
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\PartialData'
+path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\FullData'
 hidden_data_path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\HiddenStates'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
        'GGT', 'HBVDNA', 'HBeAg', 'HBsAg', 'HCVRNA', 'HDL', 'Hb', 'HbA1c',
@@ -26,7 +26,7 @@ covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', '
        'Tenofovir Disoproxil Fumarate', 'Thiazide']) 
 types=np.array(['numeric','dummy'])
 covariate_types=np.array(['numeric']*len(covariates))
-sample_size=500
+sample_size=4000
 data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)  
 z=sdg.hidden_data_reader(hidden_data_path,sample_size)
 
@@ -45,21 +45,16 @@ if __name__ == '__main__':
     args=parser.parse_args(args=[])
     
     # adjust argparser
-    args.batch_size=1000
+    args.batch_size=sample_size
     args.hk=1
-    args.latent_batch_size=50
-    args.use_sgld=False
-    args.learning_rate=0.0005
+    args.latent_batch_size=sample_size
+    args.use_sgld=True
+    # learning rate suggested by Wainwright, have a try
+    args.learning_rate = 1
     args.num_core=0
     
     optimizer=Model.Random_Gibbs(model=m,args=args,initial=None)
     
+    param=optimizer.run(n=40000,log_step=250,prog_bar=True,prob=1,initial_x=None,initial_z=z)
     
-    
-    param=optimizer.run(n=2500,log_step=4,prog_bar=True,prob=0.6,initial_x=None,initial_z=None)
-    
-    pb=np.array(param['beta'])
-    pp=np.array(param['pi'])
-    plt.plot(pb[:,0,0,:])
-    plt.plot(pp[:])
     

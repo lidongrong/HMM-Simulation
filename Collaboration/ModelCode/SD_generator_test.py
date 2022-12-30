@@ -21,9 +21,7 @@ variates={'HBV': np.array(['HBeAg+ALT<=1ULN', 'HBeAg+ALT>1ULN', 'HBeAg-ALT<=1ULN
 covariates=np.array(list(variates['Lab'])+list(variates['Med']))
 d=len(covariates)
 # parameter specification
-# initial[i] propto i^2
-initial=np.array([0.        , 0.01098901, 0.04395604, 0.0989011 , 0.17582418,
-       0.27472527, 0.3956044 ])
+initial=np.array([0.3956044, 0.27472527, 0.17582418, 0.0989011, 0.04395604, 0.01098901, 0.0])
 transition=np.array([[0.6,0.1,0.1,0.1,0.05,0.05,0],
                      [0.1,0.6,0.1,0.1,0.05,0.05,0],
                      [0.1,0.1,0.6,0.1,0.05,0.05,0],
@@ -32,18 +30,10 @@ transition=np.array([[0.6,0.1,0.1,0.1,0.05,0.05,0],
                      [0,0,0,0,0.1,0.7,0.2],
                      [0,0,0,0,0,0,1]])
 # beta[z]=0.3*z for each coordinator
-'''
-beta=[np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial)) 
-      for i in range(len(initial))]
-'''
-
-beta=np.ones((len(initial),len(initial),d))
-for i in range(beta.shape[0]):
-    for j in range(beta.shape[1]):
-        beta[i][j]=np.log(i+2)*np.log(j+1)*beta[i][j]
+beta=[[np.random.multivariate_normal(np.zeros(d),np.eye(d),1)[0] for i in range(len(initial))] for j in range(len(initial))]
 beta=np.array(beta)
 # mu[z]=-3+z for each coordinator
-mu=np.random.multivariate_normal(np.zeros(d),5*np.eye(d),len(initial))
+mu=np.array([np.random.multivariate_normal(np.log2(1+1)+np.zeros(d),5*np.eye(d),1)[0] for i in range(len(initial))])
 # sigma set to be identity
 sigma=np.array([np.eye(len(covariates)) for k in range(len(initial))])
 
@@ -51,11 +41,11 @@ params=[initial,transition,beta,mu,sigma]
 params_name=['initial','transition','beta','mu','sigma']
 
 # total sequence number
-num=40000
+num=10000
 # missing rate
 rate=[0.5,0.6,0.8,0.9,0.95,0.97]
 # path
-path='D:\Object\PROJECTS\HMM\SynData'
+path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData'
 
 
 if __name__=='__main__':

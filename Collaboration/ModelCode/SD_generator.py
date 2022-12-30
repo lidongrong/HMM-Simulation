@@ -86,8 +86,9 @@ class Synthesize:
                 # beta_z
                 tmp_beta=self.beta[state]
                 # logistic regression probability
-                prob=np.exp(-np.dot(tmp_beta,new_x))
+                prob=np.exp(np.dot(tmp_beta,new_x))
                 prob=prob/sum(prob)
+                #print(prob)
                 y_state=np.random.choice(latent_size,1,True,p=prob)[0]
                 new_y=[0]*latent_size
                 new_y[y_state]=1
@@ -145,7 +146,7 @@ class Synthesize:
             # first store hidden data
             hidden_data=self.emr[i].z
             hidden_data=pd.DataFrame(hidden_data)
-            hidden_data.to_csv(f'{hidden_path}/{i}_path.csv')
+            hidden_data.to_csv(f'{hidden_path}/{i}.csv')
             
             # then store full data
             x=self.emr[i].x
@@ -236,8 +237,39 @@ def data_loader(data_path,sample_size,covariates,covariate_types):
     lengths=data_to_length(sequences)
     sequences=data_to_array(sequences,covariates,covariate_types)
     return sequences,lengths
-            
-            
+
+def hidden_data_reader(data_path,sample_size):
+    '''
+    test code:
+    hidden_data_path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\HiddenStates'
+    sample_size=50
+    z=hidden_data_reader(hidden_data_path,sample_size)
+    '''
+    f=os.listdir(data_path)
+    f=f[0:sample_size]
+    for i in range(0,len(f)):
+        f[i]=data_path+'/'+f[i]
+    sequences=[]
+    for k in range(0,sample_size):
+        sequences.append(pd.read_csv(f[k]))
+    
+    x=data_reader(data_path,sample_size)
+    lengths=data_to_length(x)
+    max_length=max(lengths)
+    
+    for i in range(0,len(sequences)):
+        sequences[i]=sequences[i].values
+        if sequences[i].shape[0]<max_length:
+            features=sequences[i].shape[1]
+            compensate=np.empty((max_length-sequences[i].shape[0],features))
+            compensate[:]=np.nan
+            sequences[i]=np.concatenate((sequences[i],compensate),axis=0)
+    
+    sequences=np.float32(sequences)
+    
+    
+    return sequences[:,:,1:]
+        
         
 # test code
 '''
