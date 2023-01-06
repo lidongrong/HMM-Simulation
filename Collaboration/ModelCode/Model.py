@@ -17,6 +17,8 @@ import scipy.special as ss
 import logging
 import torch
 import matplotlib.pyplot as plt
+import utils
+
 
 class HMM_Model:
     def __init__(self,data,lengths,features,feature_types):
@@ -91,7 +93,7 @@ class Random_Gibbs(Optimizer):
             self.sigma=stats.invwishart.rvs(model.feature_dim,np.eye(model.feature_dim),model.hidden_dim)
             tmp_beta=[np.random.multivariate_normal(np.zeros(self.model.feature_dim),
                                                     1*np.eye(self.model.feature_dim),
-                                                    self.model.hidden_dim) 
+                                                    self.model.hidden_dim-1) 
                   for i in range(self.model.hidden_dim)]
             tmp_beta=np.array(tmp_beta)
             self.beta=tmp_beta
@@ -231,6 +233,7 @@ class Random_Gibbs(Optimizer):
         print(end-start)
         '''
         log_trans=np.log(self.transition)
+        beta=np.concatenate((self.beta,np.zeros((self.beta.shape[0],1,self.beta.shape[2]))),axis=1)
         # step 1: forward computation
         log_alpha=[]
         # if observed
@@ -238,7 +241,7 @@ class Random_Gibbs(Optimizer):
         x_logpdf=np.array([stats.multivariate_normal.logpdf(x[0],self.mu[i],self.sigma[i])
                         for i in range(self.model.hidden_dim)])
         '''
-        x_logpdf = np.array(list(map(stats.multivariate_normal.logpdf,x[0]*self.model.hidden_dim,
+        x_logpdf = np.array(list(map(stats.multivariate_normal.logpdf,np.tile(x[0],(self.model.hidden_dim,1)),
                             self.mu,self.sigma)))
         # if y1 observed
         if np.any(y_masks[0]):
@@ -248,8 +251,7 @@ class Random_Gibbs(Optimizer):
             y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])-ss.logsumexp(-np.dot(self.beta[i],x[0]))
                                for i in range(self.model.hidden_dim)])
             '''
-            y_logpdf=np.dot(self.beta[:][y_obs],x[0])-ss.logsumexp(np.dot(self.beta,x[0]),axis=1)
-            
+            y_logpdf=np.dot(beta[:][y_obs],x[0])-ss.logsumexp(np.dot(beta,x[0]),axis=1)
             log_alpha.append(np.log(self.pi)+y_logpdf+x_logpdf)
         # if y1 missing
         else:
@@ -263,7 +265,7 @@ class Random_Gibbs(Optimizer):
             x_logpdf=np.array([stats.multivariate_normal.logpdf(x[t],self.mu[i],self.sigma[i])
                             for i in range(self.model.hidden_dim)])
             '''
-            x_logpdf = np.array(list(map(stats.multivariate_normal.logpdf,x[t]*self.model.hidden_dim,
+            x_logpdf = np.array(list(map(stats.multivariate_normal.logpdf,np.tile(x[t],(self.model.hidden_dim,1)),
                                 self.mu,self.sigma)))
             
             left=(last+log_trans.T).T
@@ -278,7 +280,7 @@ class Random_Gibbs(Optimizer):
                 y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[t])-ss.logsumexp(-np.dot(self.beta[i],x[t]))
                                    for i in range(self.model.hidden_dim)])
                 '''
-                y_logpdf=np.dot(self.beta[:][y_obs],x[t])-ss.logsumexp(np.dot(self.beta,x[t]),axis=1)
+                y_logpdf=np.dot(beta[:][y_obs],x[t])-ss.logsumexp(np.dot(beta,x[t]),axis=1)
                 #y_logpdf=y_logpdf-ss.logsumexp(y_logpdf)
                 log_alpha.append(left+x_logpdf+y_logpdf)
             # y missing
@@ -378,6 +380,7 @@ class Random_Gibbs(Optimizer):
                               optimizer.model.y_masks[0])
         '''
         new_x=x.copy()
+        beta=np.concatenate((self.beta,np.zeros((self.beta.shape[0],1,self.beta.shape[2]))),axis=1)
         for t in range(length):
             xt=x[t]
             mskt=x_masks[t]
@@ -391,14 +394,14 @@ class Random_Gibbs(Optimizer):
                     # otherwise: take y_t into account
                 else:
                     # otherwise, yt observed, sample by metropolis jump
-                    prop_xt=np.random.multivariate_normal(self.mu[latent],self.sigma[latent])
                     latent=np.where(z[t]==1)[0][0]
+                    prop_xt=np.random.multivariate_normal(self.mu[latent],self.sigma[latent])
                     y_obs=np.where(y[t]==1)[0][0]
                     
-                    y_logpdf=np.dot(self.beta[latent][y_obs],x[t])-\
-                        ss.logsumexp(np.dot(self.beta[latent],x[t]))
-                    new_y_logpdf=np.dot(self.beta[latent][y_obs],prop_xt)-\
-                        ss.logsumexp(np.dot(self.beta[latent],prop_xt))
+                    y_logpdf=np.dot(beta[latent][y_obs],x[t])-\
+                        ss.logsumexp(np.dot(beta[latent],x[t]))
+                    new_y_logpdf=np.dot(beta[latent][y_obs],prop_xt)-\
+                        ss.logsumexp(np.dot(beta[latent],prop_xt))
                     log_u=np.log(np.random.uniform(0,1,1)[0])
                     if log_u<new_y_logpdf-y_logpdf:
                         new_x[t]=prop_xt
@@ -447,10 +450,10 @@ class Random_Gibbs(Optimizer):
                     latent=np.where(z[t]==1)[0][0]
                     y_obs=np.where(y[t]==1)[0][0]
                     
-                    y_logpdf=np.dot(self.beta[latent][y_obs],x[t])-\
-                        ss.logsumexp(np.dot(self.beta[latent],x[t]))
-                    new_y_logpdf=np.dot(self.beta[latent][y_obs],prop_xt)-\
-                        ss.logsumexp(np.dot(self.beta[latent],prop_xt))
+                    y_logpdf=np.dot(beta[latent][y_obs],x[t])-\
+                        ss.logsumexp(np.dot(beta[latent],x[t]))
+                    new_y_logpdf=np.dot(beta[latent][y_obs],prop_xt)-\
+                        ss.logsumexp(np.dot(beta[latent],prop_xt))
                     log_u=np.log(np.random.uniform(0,1,1)[0])
                     if log_u<new_y_logpdf-y_logpdf:
                         new_x[t]=prop_xt
@@ -581,6 +584,32 @@ class Random_Gibbs(Optimizer):
         self.sigma=new_sigma
         return new_sigma
     
+    def check_state(self,x,y,z):
+        '''
+        check the states of y|z
+        mx,my,mz=optimizer.check_state(x,y,z)
+        '''
+        mz=[]
+        my=[]
+        mx=[]
+        for i in range(self.model.hidden_dim):
+            mx.append([])
+            my.append([])
+            mz.append([])
+            for j in range(self.model.hidden_dim):
+                maskz=z[:,:,i]
+                maskz=(maskz==1)
+                masky=y[:,:,j]
+                masky=(masky==1)
+                mask=maskz*masky
+                # find x
+                if mask.size!=0:
+                    mz[i].append(x[maskz].shape[0])
+                    my[i].append(x[masky].shape[0])
+                    mx[i].append(x[mask].shape[0])
+        return mx,my,mz
+                    
+    
     # sample beta
     def sample_beta(self,x,y,z):
         '''
@@ -614,7 +643,82 @@ class Random_Gibbs(Optimizer):
             self.beta=new_beta
             
         return self.beta
+    
+    def logistic_forward(self,x,y,beta):
+        '''
+        This is an alternative to beta forward function
+        return log p(x,y,z|\beta)p(\beta) for specific beta_i
+        beta in R(6,40)
+        x in R(50,40)
+        y in R(50,7) (for instance)
+        test code:
+            site=6
+            mz=z[:,:,site]==1
+            train_x=x[mz]
+            train_y=y[mz]
+            train_x=torch.tensor(train_x).to(torch.float64)
+            train_y=torch.tensor(train_y).to(torch.float64)
+            b=torch.tensor(beta[6])
+            f=optimizer.logistic_forward(train_x,train_y,b)
+        '''
         
+        log_prior= -0.5*(self.args.batch_size/self.model.data.shape[0])*(torch.norm(beta)**2)
+        
+        b=torch.cat((beta,torch.zeros((1,beta.shape[1]))),dim=0) # turn to beta in R(7,40)
+        loading= y @  b # R(50,40), each row represent corresponding beta for x
+        log_prod = torch.sum(loading*x,1) # each row is xt.T @ beta corresponding to xt, shape= (50,1)
+        
+        log_prod2=torch.logsumexp(x @ b.T,dim=1) # dominator of logistic regression, shape=(50,1)
+        assert log_prod2.shape[0]==x.shape[0]
+        
+        return (log_prior + torch.sum(log_prod)-torch.sum(log_prod2))*(1)
+        
+        
+    def beta_forward(self,x,beta,j):
+        '''
+        return log of p(x,y,z|\beta)p(\beta) in torch form
+        test code:
+        beta=np.random.normal(0,1,(6,40))
+        x=np.random.normal(0,1,(50,40))
+        x=torch.tensor(x,requires_grad=True)
+        beta=torch.tensor(beta,requires_grad=True)
+        f=optimizer.beta_forward(x,beta,0)
+        '''
+        #x=torch.tensor(x,requires_grad=True)
+        #beta=torch.tensor(beta,requires_grad=True)
+        batch=self.args.batch_size
+        if j< self.model.hidden_dim-1:
+            #log_term1=-batch*torch.dot(beta[j],beta[j])/(2*self.model.data.shape[0])
+            assert batch==self.model.data.shape[0]
+            log_term1=(-1)*(batch/self.model.data.shape[0])*(torch.norm(beta[j])**2)/2
+        elif j==self.model.hidden_dim-1:
+            log_term1=0
+        
+        # diagnostic code
+        #print('batch: ',batch)
+        #print('data size: ',self.model.data.shape[0])
+        
+        # our implementation of softmax
+        
+        
+        b=torch.cat((beta,torch.zeros((1,beta.shape[1]))),dim=0)
+        term2=torch.matmul(x,b.T)
+        if j< self.model.hidden_dim-1:
+            log_term2=torch.sum(term2[:,j])-torch.sum(torch.logsumexp(
+                term2,
+                dim=1))
+        elif j==self.model.hidden_dim-1:
+            log_term2=-torch.sum(torch.logsumexp(
+                term2,
+                dim=1))
+        
+        # try torch's implementation of softmax
+        '''
+        term2=torch.nn.functional.softmax(torch.matmul(-x,beta.T),dim=1)
+        log_term2=torch.sum(torch.log(term2[:,j]))
+        '''
+        
+        return log_term1+log_term2
     
     def beta_grad(self,x,y,z,beta):
         '''
@@ -624,14 +728,17 @@ class Random_Gibbs(Optimizer):
         x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
         y=optimizer.model.y
         beta=optimizer.beta
-        g=optimizer.beta_grad(x[0:50],y[0:50],z[0:50],beta)
+        f,g=optimizer.beta_grad(x,y,z,beta)
         '''
-        f=0
-        beta=beta.astype(x.dtype)
+        f=torch.tensor(0.)
+        x=x.astype(beta.dtype)
+        y=y.astype(beta.dtype)
         x=torch.tensor(x)
         beta=torch.tensor(beta,requires_grad=True)
-        for i in range(beta.shape[0]):
-            for j in range(beta.shape[1]):
+        y=torch.tensor(y)
+        '''
+        for i in range(self.model.hidden_dim):
+            for j in range(self.model.hidden_dim):
                 maskz=z[:,:,i]
                 maskz=(maskz==1)
                 masky=y[:,:,j]
@@ -641,6 +748,14 @@ class Random_Gibbs(Optimizer):
                 if mask.size!=0:
                     x_zy=x[mask]
                     f=f+self.beta_forward(x_zy,beta[i],j)
+                    '''
+        for i in range(self.model.hidden_dim):
+            mz=z[:,:,i]
+            mz=(mz==1)
+            
+            train_x=x[mz]
+            train_y=y[mz]
+            f=f+self.logistic_forward(train_x,train_y,beta[i])
         # f: energy function
         f.backward()
         grad=beta.grad
@@ -657,17 +772,21 @@ class Random_Gibbs(Optimizer):
         beta: the full beta paramter, should be numpy array
         x,z=optimizer.latent_initializer(optimizer.model.x,optimizer.model.y)
         y=optimizer.model.y
-        beta=optimizer.beta
-        g=optimizer.beta_grad(x[0:50],y[0:50],z[0:50],beta)
+        b=optimizer.beta
+        b=np.expand_dims(b[0],0)
+        f,g=optimizer.MALA_beta_grad(x[0:50],y[0:50],z[0:50],b,0)
         '''
-        f=0
-        beta=beta.astype(x.dtype)
+        #f=torch.tensor(0.)
+        x=x.astype(beta.dtype)
+        y=y.astype(beta.dtype)
         x=torch.tensor(x)
         beta=torch.tensor(beta,requires_grad=True)
+        y=torch.tensor(y)
+        '''
+        maskz=z[:,:,i]
+        maskz=(maskz==1)
         
-        for j in range(beta.shape[1]):
-            maskz=z[:,:,i]
-            maskz=(maskz==1)
+        for j in range(self.model.hidden_dim):
             masky=y[:,:,j]
             masky=(masky==1)
             mask=maskz*masky
@@ -675,43 +794,19 @@ class Random_Gibbs(Optimizer):
             if mask.size!=0:
                 x_zy=x[mask]
                 f=f+self.beta_forward(x_zy,beta[0],j)
+                '''
+        mz=z[:,:,i]
+        mz=(mz==1)
+        x_train=x[mz]
+        y_train=y[mz]
+        f=self.logistic_forward(x_train,y_train,beta[0])
         # f: energy function
         f.backward()
         grad=beta.grad
         f=f.detach().numpy()
         return f, grad.numpy()
     
-    def beta_forward(self,x,beta,j):
-        '''
-        return log of p(x,y,z|\beta)p(\beta) in torch form
-        test code:
-        beta=np.random.normal(0,1,(7,40))
-        x=np.random.normal(0,1,(50,40))
-        x=torch.tensor(x,requires_grad=True)
-        beta=torch.tensor(beta,requires_grad=True)
-        f=optimizer.beta_forward(x,beta,0)
-        '''
-        #x=torch.tensor(x,requires_grad=True)
-        #beta=torch.tensor(beta,requires_grad=True)
-        batch=self.args.batch_size
-        log_term1=-batch*torch.dot(beta[j],beta[j])/(2*self.model.data.shape[0])
-        
-        # diagnostic code
-        #print('batch: ',batch)
-        #print('data size: ',self.model.data.shape[0])
-        
-        # our implementation of softmax
-        
-        term2=torch.matmul(x,beta.T)
-        log_term2=torch.sum(term2[:,j])-torch.sum(torch.logsumexp(term2,dim=1))
-        
-        # try torch's implementation of softmax
-        '''
-        term2=torch.nn.functional.softmax(torch.matmul(-x,beta.T),dim=1)
-        log_term2=torch.sum(torch.log(term2[:,j]))
-        '''
-        
-        return log_term1+log_term2
+    
     
     # perform SGLD by evaluating beta on x,y and z
     #def SGLD_beta(self,x,y,z,n,k,beta):
@@ -728,7 +823,7 @@ class Random_Gibbs(Optimizer):
         n=self.args.batch_size
         self.args.hk=self.args.hk+1
         hk=self.args.learning_rate * (self.args.hk**(-1))
-        print('learning rate:',hk)
+        #print('learning rate:',hk)
         #print('hk:',hk)
         '''
         noise=np.random.multivariate_normal(np.zeros(self.model.feature_dim),
@@ -740,7 +835,7 @@ class Random_Gibbs(Optimizer):
         
         f,beta_grad=self.beta_grad(x,y,z,new_beta)
         #print('objective: ',f)
-        new_beta=new_beta + (hk/2) * (N/n) * beta_grad + noise
+        new_beta=new_beta + (hk/2) * (N/n) * beta_grad #+ noise
         
         return new_beta
     
@@ -749,7 +844,7 @@ class Random_Gibbs(Optimizer):
         n=N
         self.args.hk=1
         lr=self.args.learning_rate * 1
-        '''
+        
         # update all beta at one time
         noise= np.sqrt(2*lr) * np.random.normal(0,1,size=beta.shape)
         
@@ -760,26 +855,24 @@ class Random_Gibbs(Optimizer):
         f1,beta_grad1 = self.beta_grad(x,y,z,new_beta)
         
         ratio=f1-f - (1/(4*lr))*np.linalg.norm(old_beta-new_beta-lr*beta_grad1)**2+\
-                             (1/(4*lr))*np.linalg.norm(new_beta-old_beta-lr*beta_grad)**2
+                            (1/(4*lr))*np.linalg.norm(new_beta-old_beta-lr*beta_grad)**2
         u=np.random.uniform(0,1,1)[0]
         log_u=np.log(u)
         ratio=min(0,ratio)
         
         
-        print('Log ratio: ',ratio)
-        print(f'Energy, ','f: ', f, ' new_f: ',f1)
-        print(f'grad, ', 'grad_f', np.sum(abs(beta_grad)), 'new_grad', np.sum(abs(beta_grad1)))
+        #print('Log ratio: ',ratio)
+        #print(f'Energy, ','f: ', f, ' new_f: ',f1)
+        #print(f'grad, ', 'grad_f', np.sum(abs(beta_grad)), 'new_grad', np.sum(abs(beta_grad1)))
         
         
         if log_u<=ratio:
             return new_beta
         else:
             return old_beta
+        
+        
         '''
-        
-        
-        
-        
         noise=np.sqrt(2*lr)* np.random.normal(0,1,size=beta.shape)
         u=np.random.uniform(0,1,beta.shape[0])
         log_u=np.log(u)
@@ -788,7 +881,7 @@ class Random_Gibbs(Optimizer):
         
         # update beta[i] one by one for i in range(beta.shape[0])
         for i in range(beta.shape[0]):
-            local_beta=np.expand_dims(beta[i],0)
+            local_beta=np.expand_dims(tmp_beta[i],0)
             local_noise=np.expand_dims(noise[i],0)
             
             old_beta=local_beta.copy()
@@ -798,15 +891,14 @@ class Random_Gibbs(Optimizer):
             local_f1,local_beta_grad1=self.MALA_beta_grad(x,y,z,new_beta,i)
             
             # our implementation
-            
-            ratio=local_f1-local_f-(1/(4*lr))*np.linalg.norm(old_beta-new_beta\
-                                                             -lr*local_beta_grad1)**2+\
-                (1/(4*lr))*np.linalg.norm(new_beta-old_beta-lr*local_beta_grad)**2
-                
+            ratio1=local_f1-local_f
+            ratio2=-(1/(4*lr))*np.linalg.norm(old_beta-new_beta-lr*local_beta_grad1)**2+(1/(4*lr))*np.linalg.norm(new_beta-old_beta-lr*local_beta_grad)**2
+            ratio=ratio1+ratio2
             
             print('ratio: ',ratio)
+            #print('ratio2: ',ratio2)
             print(f'beta{i}, ','f: ', local_f, ' new_f: ',local_f1)
-            print(f'grad{i}, ', 'grad_f', np.linalg.norm(local_beta_grad), 'new_grad', np.linalg.norm(local_beta_grad1))
+            print(f'grad{i}, ', 'grad_f', np.sum(abs(local_beta_grad)), 'new_grad', np.sum(abs(local_beta_grad1)))
             ratio=min(0,ratio)
             if log_u[i]>ratio:
                 old_beta=old_beta.squeeze()
@@ -815,7 +907,7 @@ class Random_Gibbs(Optimizer):
                 new_beta=new_beta.squeeze()
                 tmp_beta[i]=new_beta.copy()
         return tmp_beta
-              
+          '''
         
         
     def z_initializer(self,x,y):
@@ -864,7 +956,7 @@ class Random_Gibbs(Optimizer):
         s: iteration number
         '''
         b=np.array(self.param['beta'])
-        plt.plot(b[-500:,0,0,:])
+        plt.plot(b[:,0,0,:])
         plt.title('beta[0][0]')
         plt.show()
         
@@ -979,6 +1071,7 @@ class Random_Gibbs(Optimizer):
                 x_batch=self.sample_x(x=x_batch,y=y_batch,z=z_batch,
                                       lengths=self.model.lengths[batch_index],
                                       x_masks=self.model.x_masks[batch_index],
+                                      y_masks=self.model.y_masks[batch_index],
                                       p=core)
                 
                 x[batch_index]=x_batch
@@ -995,11 +1088,74 @@ class Random_Gibbs(Optimizer):
         
         return self.param
     
-
-    def pickle(self,path):
+    def summary(self,param_path):
         '''
-        save parameters to path
+        summarize results by comparing the results to true parameters
+        param_path: where true parameters lies
+        '''
+        true_initial=np.load(f'{param_path}\initial.npy')
+        true_transition=np.load(f'{param_path}/transition.npy')
+        true_beta=np.load(f'{param_path}/beta.npy')
+        true_mu=np.load(f'{param_path}\mu.npy')
+        true_sigma=np.load(f'{param_path}\sigma.npy')
+        
+        # register true parameters to the optimizer
+        self.true_param={}
+        self.true_param['pi']=true_initial
+        self.true_param['beta']=true_beta
+        self.true_param['mu']=true_mu
+        self.true_param['sigma']=true_sigma
+        self.true_param['transition']=true_transition
+        
+        # transform estimation to numpy
+        keys=list(self.param.keys())
+        for i in range(len(keys)):
+            self.param[keys[i]]=np.array(self.param[keys[i]])
+            
+        # permute to the right position
+        s=10
+        ep=sum(self.param['pi'][-s:])/len(self.param['pi'][-s:])
+        
+        permute=utils.find_permute(ep,true_initial)
+        permute=utils.find_permute(ep,true_initial)
+        p,t,m,s,b=utils.permute_train(permute,self.param['pi'],self.param['transition'],
+                                     self.param['mu'],self.param['sigma'],self.param['beta'])
+        # obtain transformed parameters
+        self.param['pi']=p
+        self.param['transition']=t
+        self.param['mu']=m
+        self.param['sigma']=s
+        self.param['beta']=b
+        
+        # start analyzing
+        self.mae={}
+        for i in range(len(keys)):
+            error=self.param[keys[i]]-self.true_param[keys[i]]
+            # summation with respect to dimensions except for the first one
+            mean_error=np.sum(error,axis=tuple(np.arange(1,len(error.shape))))
+            # calculate average entrywise dimension
+            mean_error=mean_error/np.cumprod(self.true_param[keys[i]].shape)[-1]
+            mean_error=np.abs(mean_error)
+            self.mae[keys[i]]=mean_error
+            assert len(mean_error.shape)==1
+        
+        # calculate posterior variance and mean
+        post_length=int(0.3*len(self.param['pi']))
+        self.mean={}
+        self.variance={}
+        for i in range(len(keys)):
+            self.mean[keys[i]]=np.mean(self.param[keys[i]][-post_length:],axis=0)
+            self.variance[keys[i]]=np.mean(self.param[keys[i]][-post_length:],axis=0)
+        
+        return self.mae,self.mean,self.variance
+        
+      
+    def pickle(self,path,param_path=None):
+        '''
+        save parameters and summary to path
         also save a config to keep important configs (lr, data size, etc)
+        if param_path=None, will save parameter estimation and mean/var
+        if param_path!=None, will also provide trace plots of error
         '''
         keys=list(self.param.keys())
         for i in range(len(keys)):
@@ -1016,6 +1172,37 @@ class Random_Gibbs(Optimizer):
         
         config=pd.Series(config)
         config.to_csv(f'{path}/config.txt')
+        
+        if param_path is None:
+            # only save mean & variance
+            # calculate posterior variance and mean
+            post_length=int(0.3*len(self.param['pi']))
+            self.mean={}
+            self.variance={}
+            for i in range(len(keys)):
+                self.mean[keys[i]]=np.mean(self.param[keys[i]][-post_length:],axis=0)
+                self.variance[keys[i]]=np.mean(self.param[keys[i]][-post_length:],axis=0)
+            m=pd.Series(self.mean)
+            v=pd.Series(self.variance)
+            m.to_csv(f'{path}/posterior_mean.csv')
+            v.to_csv(f'{path}/posterior_var.csv')
+        else:
+            self.summary(param_path)
+            m=pd.Series(self.mean)
+            v=pd.Series(self.variance)
+            mae=pd.Series(self.mae)
+            m.to_csv(f'{path}/posterior_mean.csv')
+            v.to_csv(f'{path}/posterior_var.csv')
+            mae.to_csv(f'{path}/error.csv')
+            
+            # save plots
+            for i in range(len(keys)):
+                plt.plot(self.mae[keys[i]])
+                plt.title(f'Estimation error of {keys[i]}')
+                plt.savefig(f'{path}/{keys[i]}_error.png')
+                plt.close()
+        
+        
     
     def unpickle(self,path):
         '''

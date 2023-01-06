@@ -15,20 +15,25 @@ import os
 import argparse
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\FullData'
-hidden_data_path='D:\Files\CUHK_Material\Research_MakeThisObservable\EMR\Data\SynData\Rate0.5\HiddenStates'
+path='D:\Object\PROJECTS\HMM\SynData\Rate0.5\PartialData'
+hidden_data_path='D:\Object\PROJECTS\HMM\SynData\Rate0.5\HiddenStates'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
        'GGT', 'HBVDNA', 'HBeAg', 'HBsAg', 'HCVRNA', 'HDL', 'Hb', 'HbA1c',
        'INR', 'LDL', 'PLT', 'PT', 'TBili', 'TC', 'TG', 'WCC', 'ACEI',
        'ARB', 'Anticoagulant', 'Antiplatelet', 'BetaBlocker',
        'CalciumChannelBlocker', 'Cytotoxic', 'Entecavir', 'IS', 'Insulin',
        'Interferon', 'LipidLoweringAgent', 'OHA', 'Tenofovir Alafenamide',
-       'Tenofovir Disoproxil Fumarate', 'Thiazide']) 
+       'Tenofovir Disoproxil Fumarate', 'Thiazide'])
+
+d=3
+covariates=covariates[0:d]
+
 types=np.array(['numeric','dummy'])
 covariate_types=np.array(['numeric']*len(covariates))
-sample_size=4000
+sample_size=5000
 data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)  
 z=sdg.hidden_data_reader(hidden_data_path,sample_size)
+beta=np.load('D:\Object\PROJECTS\HMM\SynData/beta.npy')
 
 if __name__ == '__main__':
     
@@ -47,14 +52,17 @@ if __name__ == '__main__':
     # adjust argparser
     args.batch_size=sample_size
     args.hk=1
-    args.latent_batch_size=sample_size
-    args.use_sgld=True
+    args.latent_batch_size=50
+    args.use_sgld=False
     # learning rate suggested by Wainwright, have a try
-    args.learning_rate = 1
+    args.learning_rate = (1/126)*(1/(0.15*sample_size))
     args.num_core=0
+    
     
     optimizer=Model.Random_Gibbs(model=m,args=args,initial=None)
     
-    param=optimizer.run(n=40000,log_step=250,prog_bar=True,prob=1,initial_x=None,initial_z=z)
+    mx,my,mz=optimizer.check_state(x,y,z)
+    #optimizer.beta=beta
+    param=optimizer.run(n=100,log_step=250,prog_bar=True,prob=0.6,initial_x=None,initial_z=z)
     
     

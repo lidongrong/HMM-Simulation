@@ -87,6 +87,7 @@ class Synthesize:
                 tmp_beta=self.beta[state]
                 # logistic regression probability
                 prob=np.exp(np.dot(tmp_beta,new_x))
+                prob=np.append(prob,1)
                 prob=prob/sum(prob)
                 #print(prob)
                 y_state=np.random.choice(latent_size,1,True,p=prob)[0]
