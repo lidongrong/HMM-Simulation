@@ -16,6 +16,7 @@ import argparse
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 path='D:\Object\PROJECTS\HMM\SynData\Rate0.5\PartialData'
+param_path='D:\Object\PROJECTS\HMM\SynData'
 hidden_data_path='D:\Object\PROJECTS\HMM\SynData\Rate0.5\HiddenStates'
 covariates=np.array(['AFP', 'ALB', 'ALT', 'AST', 'Anti-HBe', 'Anti-HBs', 'Cr', 'FBS',
        'GGT', 'HBVDNA', 'HBeAg', 'HBsAg', 'HCVRNA', 'HDL', 'Hb', 'HbA1c',
@@ -30,7 +31,7 @@ covariates=covariates[0:d]
 
 types=np.array(['numeric','dummy'])
 covariate_types=np.array(['numeric']*len(covariates))
-sample_size=5000
+sample_size=1000
 data,lengths=sdg.data_loader(path,sample_size,covariates,covariate_types)  
 z=sdg.hidden_data_reader(hidden_data_path,sample_size)
 beta=np.load('D:\Object\PROJECTS\HMM\SynData/beta.npy')
@@ -56,13 +57,14 @@ if __name__ == '__main__':
     args.use_sgld=False
     # learning rate suggested by Wainwright, have a try
     args.learning_rate = (1/126)*(1/(0.15*sample_size))
-    args.num_core=0
+    args.num_core=8
     
     
     optimizer=Model.Random_Gibbs(model=m,args=args,initial=None)
-    
-    mx,my,mz=optimizer.check_state(x,y,z)
+    true_param=optimizer.load_true_param(param_path)
+    optimizer.set_as_true_param(true_param)
+    #mx,my,mz=optimizer.check_state(x,y,z)
     #optimizer.beta=beta
-    param=optimizer.run(n=100,log_step=250,prog_bar=True,prob=0.6,initial_x=None,initial_z=z)
+    param=optimizer.run(n=30000,log_step=250,prog_bar=True,prob=1,initial_x=None,initial_z=z)
     
     

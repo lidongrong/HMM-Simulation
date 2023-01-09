@@ -99,6 +99,41 @@ class Random_Gibbs(Optimizer):
             self.beta=tmp_beta
             #print(self.beta[0][0])
     
+    def load_true_param(self,param_path):
+        '''
+        load and return true parameters
+        '''
+        true_initial=np.load(f'{param_path}\initial.npy')
+        true_transition=np.load(f'{param_path}/transition.npy')
+        true_beta=np.load(f'{param_path}/beta.npy')
+        true_mu=np.load(f'{param_path}\mu.npy')
+        true_sigma=np.load(f'{param_path}\sigma.npy')
+        
+        # register true parameters to the optimizer
+        self.true_param={}
+        self.true_param['pi']=true_initial
+        self.true_param['beta']=true_beta
+        self.true_param['mu']=true_mu
+        self.true_param['sigma']=true_sigma
+        self.true_param['transition']=true_transition
+        
+        return self.true_param
+    
+    def set_as_true_param(self,true_param):
+        '''
+        set optimizer.parameter(initial, beta, etc) as true parameters
+        true_param: a dict containing true parameters
+        test code:
+        true_param=optimizer.load_true_param(param_path)
+        optimizer.set_as_true_param(true_param)
+        '''
+        self.pi=true_param['pi']
+        self.beta=true_param['beta']
+        self.mu=true_param['mu']
+        self.transition=true_param['transition']
+        self.sigma=true_param['sigma']
+        
+    
     
     def obs_log_likelihood(self,x,y,z,length):
         '''
@@ -233,6 +268,7 @@ class Random_Gibbs(Optimizer):
         print(end-start)
         '''
         log_trans=np.log(self.transition)
+        #print(log_trans)
         beta=np.concatenate((self.beta,np.zeros((self.beta.shape[0],1,self.beta.shape[2]))),axis=1)
         # step 1: forward computation
         log_alpha=[]
@@ -246,19 +282,19 @@ class Random_Gibbs(Optimizer):
         # if y1 observed
         if np.any(y_masks[0]):
             y_obs=np.where(y[0]==1)[0][0]
-            
             '''
             y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[0])-ss.logsumexp(-np.dot(self.beta[i],x[0]))
                                for i in range(self.model.hidden_dim)])
             '''
-            y_logpdf=np.dot(beta[:][y_obs],x[0])-ss.logsumexp(np.dot(beta,x[0]),axis=1)
+            #y_logpdf=np.dot(beta[:][y_obs],x[0])-ss.logsumexp(np.dot(beta,x[0]),axis=1)
+            y_logpdf=np.dot(beta[:,y_obs,:],x[0])-ss.logsumexp(np.dot(beta,x[0]),axis=1)
             log_alpha.append(np.log(self.pi)+y_logpdf+x_logpdf)
         # if y1 missing
         else:
             log_alpha.append(np.log(self.pi)+x_logpdf)
+        #print(log_alpha)
         # iteration from 0 to T-1
         for t in range(1,length):
-            
             # iteration from last step
             last=log_alpha[len(log_alpha)-1]
             '''
@@ -280,7 +316,8 @@ class Random_Gibbs(Optimizer):
                 y_logpdf=np.array([-np.dot(self.beta[i][y_obs],x[t])-ss.logsumexp(-np.dot(self.beta[i],x[t]))
                                    for i in range(self.model.hidden_dim)])
                 '''
-                y_logpdf=np.dot(beta[:][y_obs],x[t])-ss.logsumexp(np.dot(beta,x[t]),axis=1)
+                #y_logpdf=np.dot(beta[:][y_obs],x[t])-ss.logsumexp(np.dot(beta,x[t]),axis=1)
+                y_logpdf=np.dot(beta[:,y_obs,:],x[t])-ss.logsumexp(np.dot(beta,x[t]),axis=1)
                 #y_logpdf=y_logpdf-ss.logsumexp(y_logpdf)
                 log_alpha.append(left+x_logpdf+y_logpdf)
             # y missing
@@ -294,6 +331,7 @@ class Random_Gibbs(Optimizer):
         # first sample z_T
         assert len(log_alpha)==length
         prob=log_alpha[length-1]
+        #print('last prob: ', np.exp(prob-ss.logsumexp(prob)))
         '''
         prob=np.exp(prob-ss.logsumexp(prob))
         # position
@@ -755,6 +793,9 @@ class Random_Gibbs(Optimizer):
             
             train_x=x[mz]
             train_y=y[mz]
+            # remove missing rows with missing y
+            train_x=train_x[~torch.any(train_y.isnan(),dim=-1)]
+            train_y=train_y[~torch.any(train_y.isnan(),dim=-1)]
             f=f+self.logistic_forward(train_x,train_y,beta[i])
         # f: energy function
         f.backward()
@@ -799,6 +840,10 @@ class Random_Gibbs(Optimizer):
         mz=(mz==1)
         x_train=x[mz]
         y_train=y[mz]
+        # remove missing rows with missing y
+        x_train=x_train[~torch.any(y_train.isnan(),dim=-1)]
+        y_train=y_train[~torch.any(y_train.isnan(),dim=-1)]
+        
         f=self.logistic_forward(x_train,y_train,beta[0])
         # f: energy function
         f.backward()
